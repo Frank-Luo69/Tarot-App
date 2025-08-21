@@ -376,6 +376,56 @@ export default function TarotApp() {
   const [currentQuestion, setCurrentQuestion] = useLocalStorage<string>("tarot.question", "未来两周推进我的 X 的最佳做法？");
   const [newlinePref, setNewlinePref] = useLocalStorage<string>("tarot.newline", "lf");
 
+  // On first load, parse URL search params to restore and auto draw
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    const hasAuto = sp.get('autodraw');
+    const seedParam = (sp.get('seed') || '').trim();
+    const spreadParam = sp.get('spread');
+    const revParam = sp.get('rev');
+    const langParam = sp.get('lang') as Lang | null;
+    const qParam = sp.get('q');
+    if (!hasAuto && !seedParam && !spreadParam && !revParam && !langParam && !qParam) return;
+
+    // Apply UI states
+    if (seedParam) setSeed(seedParam);
+    if (spreadParam) setSpreadId(spreadParam);
+    if (revParam) setAllowReverse(revParam === '1' || revParam === 'true');
+    if (langParam) setLang(langParam === 'en' ? 'en' : 'zh');
+    if (qParam) setCurrentQuestion(qParam);
+
+    // Build deterministic reading immediately to avoid waiting state propagation
+    try {
+      const spr = (SPREADS as any)[spreadParam || spreadId] || (SPREADS as any).three;
+      const langUse = (langParam || lang) as Lang;
+      const revUse = revParam ? (revParam === '1' || revParam === 'true') : allowReverse;
+      const seedUse = seedParam || seed || String(Date.now());
+      const dealt = deal(seedUse, spr.positions.length, revUse, langUse);
+      const cards = dealt.cards.map((c: any, i: number) => ({
+        key: c.key, type: c.type, suit: c.suit, pip: c.pip,
+        pos: spr.positions[i], name: c.name, reversed: c.reversed, kws: c.kws,
+      }));
+      const rec: any = {
+        ts: new Date().toISOString(),
+        seed: seedUse,
+        spreadId: spr.id,
+        lang: langUse,
+        allowReverse: revUse,
+        meta: { deckVersion: DECK_VERSION, rulesHash: RULES_HASH, algo: ALGO_VERSION },
+        q: qParam || currentQuestion,
+        type: cards[0]?.type,
+        cards,
+      };
+      rec.plan = generateActionPlan(rec, langUse);
+      rec.reviewAt = addDays(new Date(rec.ts), reviewDays).toISOString();
+      setReading(rec);
+      setHistory((prev)=> [rec, ...prev].slice(0, 50));
+    } catch {}
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Fallback to default 'three' spread if id is invalid
   const spread = (SPREADS as any)[spreadId] || (SPREADS as any).three;
 
@@ -423,6 +473,56 @@ export default function TarotApp() {
     }
   }
 
+  function copyPlanOnly(r = reading) {
+    if (!r || !Array.isArray(r.plan) || r.plan.length === 0) return;
+    const nl = newlinePref === 'crlf' ? "\r\n" : "\n";
+    const text = r.plan.map((a:string,i:number)=>`${i+1}. ${a}`).join(nl);
+    try {
+      const cb: any = (navigator as any).clipboard;
+      if (cb && typeof cb.writeText === 'function') {
+        cb.writeText(text);
+        alert(lang==='zh'?'已复制行动':'Actions copied');
+      } else {
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `tarot_actions_${new Date().toISOString().replace(/[:.]/g,'-')}.txt`;
+        a.click();
+        setTimeout(()=>URL.revokeObjectURL(a.href),0);
+      }
+    } catch {}
+  }
+
+  // Build a shareable URL representing the current inputs or a given reading
+  function buildShareUrl(r?: any) {
+    try {
+      const base = typeof window !== 'undefined' ? window.location.origin : '';
+      const obj = r || { seed, spreadId, allowReverse, lang, q: currentQuestion };
+      const params = new URLSearchParams();
+      if (obj.seed) params.set('seed', String(obj.seed));
+      if (obj.spreadId) params.set('spread', String(obj.spreadId));
+      if (obj.allowReverse) params.set('rev', '1');
+      if (obj.lang) params.set('lang', String(obj.lang));
+      if (obj.q) params.set('q', String(obj.q));
+      params.set('autodraw', '1');
+      return `${base}/tarot?${params.toString()}`;
+    } catch { return '' }
+  }
+
+  // Share link via Web Share API or clipboard fallback
+  function shareLink(r = reading) {
+    const url = buildShareUrl(r || undefined);
+    if (!url) return;
+    try {
+      const anyNav: any = navigator as any;
+      if (anyNav?.share) {
+        anyNav.share({ title: 'Tarot Reading', url }).catch(()=>{});
+      } else if (anyNav?.clipboard?.writeText) {
+        anyNav.clipboard.writeText(url).then(()=> alert(lang==='zh'?'链接已复制':'Link copied'));
+      }
+    } catch {}
+  }
+
   function downloadText(r = reading) {
     if (!r) return;
     const nl = newlinePref === 'crlf' ? "\r\n" : "\n";
@@ -434,6 +534,19 @@ export default function TarotApp() {
     a.download = `${base}.txt`;
     a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  }
+
+  // Build and download an .ics calendar event for review reminder
+  function downloadICS(r = reading) {
+    if (!r) return;
+    const ics = buildICS(r, { lang });
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const base = `tarot_review_${r.seed}_${new Date(r.ts).toISOString().replace(/[:.]/g,'-')}`;
+    a.download = `${base}.ics`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
   }
 
   // Build all-history text as a pure join of individual exports
@@ -465,6 +578,43 @@ export default function TarotApp() {
     setTimeout(() => URL.revokeObjectURL(a.href), 0);
   }
 
+  function importJson() {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'application/json,.json';
+    inp.onchange = async () => {
+      const file = inp.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const arr = Array.isArray(data) ? data : (Array.isArray(data?.history) ? data.history : []);
+        if (!Array.isArray(arr) || arr.length === 0) {
+          alert(lang==='zh' ? '文件中未发现可导入的记录' : 'No importable records found in file');
+          return;
+        }
+        // 轻量校验与合并去重（以 ts+seed 作为近似主键）
+        const cleaned = arr.filter((x:any)=>x && x.ts && x.seed && x.cards && Array.isArray(x.cards));
+        if (cleaned.length === 0) {
+          alert(lang==='zh' ? '没有有效记录' : 'No valid records');
+          return;
+        }
+        setHistory(prev => {
+          const key = (x:any)=> `${x.ts}#${x.seed}`;
+          const map = new Map<string, any>();
+          [...prev, ...cleaned].forEach(it => { map.set(key(it), it); });
+          const merged = Array.from(map.values()).sort((a:any,b:any)=> new Date(b.ts).getTime() - new Date(a.ts).getTime());
+          return merged.slice(0, 50);
+        });
+        alert(lang==='zh' ? '导入完成' : 'Import complete');
+      } catch (e) {
+        console.error('import error', e);
+        alert(lang==='zh' ? '导入失败：文件格式错误' : 'Import failed: invalid file');
+      }
+    };
+    inp.click();
+  }
+
   function resetHistory() {
     const ok = confirm(lang==='zh'?'确定要清空本地历史吗？此操作不可撤销。':'Clear local history? This cannot be undone.');
     if (ok) { setHistory([]); setReading(null); }
@@ -481,34 +631,34 @@ export default function TarotApp() {
       </header>
 
       <Section title={lang === "zh" ? "问题设置" : "Question"}>
-        <input value={currentQuestion} onChange={(e) => setCurrentQuestion(e.target.value)} className="w-full border rounded-lg p-2" placeholder={lang === "zh" ? "例如：两周内推进 X 的最佳做法？" : "e.g., Best way to advance X in two weeks?"} />
+        <input data-testid="question-input" value={currentQuestion} onChange={(e) => setCurrentQuestion(e.target.value)} className="w-full border rounded-lg p-2" placeholder={lang === "zh" ? "例如：两周内推进 X 的最佳做法？" : "e.g., Best way to advance X in two weeks?"} />
         <div className="flex flex-wrap items-center gap-3">
-          <select value={spreadId} onChange={(e) => setSpreadId(e.target.value)} className="border rounded-lg p-2">
+          <select data-testid="spread-select" value={spreadId} onChange={(e) => setSpreadId(e.target.value)} className="border rounded-lg p-2">
             {Object.values(SPREADS).map((s: any) => (
               <option key={s.id} value={s.id}>{s.name[langKey(lang)]}</option>
             ))}
           </select>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={allowReverse} onChange={(e) => setAllowReverse(e.target.checked)} />{lang === "zh" ? "允许逆位" : "Allow reversed"}</label>
-          <input value={seed} onChange={(e) => setSeed(e.target.value)} className="border rounded-lg p-2" placeholder={lang === "zh" ? "可选：种子（可复现）" : "Optional: seed (reproducible)"} />
+          <label className="flex items-center gap-2 text-sm"><input data-testid="allow-reverse" type="checkbox" checked={allowReverse} onChange={(e) => setAllowReverse(e.target.checked)} />{lang === "zh" ? "允许逆位" : "Allow reversed"}</label>
+          <input data-testid="seed-input" value={seed} onChange={(e) => setSeed(e.target.value)} className="border rounded-lg p-2" placeholder={lang === "zh" ? "可选：种子（可复现）" : "Optional: seed (reproducible)"} />
           <label className="flex items-center gap-2 text-sm">
             {lang === "zh" ? "复盘天数" : "Review in days"}
             <input type="number" min={1} max={60} value={reviewDays} onChange={(e) => setReviewDays(Number(e.target.value)||14)} className="w-20 border rounded-lg p-1" />
           </label>
           <label className="flex items-center gap-2 text-sm">
             {lang === 'zh' ? '换行' : 'Newline'}
-            <select className="border rounded p-1" value={newlinePref} onChange={(e)=>setNewlinePref(e.target.value)}>
+            <select data-testid="newline-select" className="border rounded p-1" value={newlinePref} onChange={(e)=>setNewlinePref(e.target.value)}>
               <option value="lf">LF (\n)</option>
               <option value="crlf">CRLF (\r\n)</option>
             </select>
           </label>
-          <button onClick={draw} className="px-4 py-2 rounded-lg bg-black text-white">{lang === "zh" ? "抽牌" : "Draw"}</button>
+          <button data-testid="draw" onClick={draw} className="px-4 py-2 rounded-lg bg-black text-white">{lang === "zh" ? "抽牌" : "Draw"}</button>
         </div>
         <p className="text-xs text-gray-500">{lang === "zh" ? "提示：设置种子可让结果可复现；此工具用于自我反思，不替代医疗/法律/投资建议。" : "Tip: Set a seed for reproducible draws. For reflection only; not medical/legal/financial advice."}</p>
       </Section>
 
       {reading && (
         <Section title={lang === "zh" ? "本次抽牌" : "Current Reading"}>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" data-testid="reading-grid">
             {reading.cards.map((c: any, idx: number) => (
               <div key={idx} className="flex flex-col items-center gap-2">
                 <CardFace name={c.name} reversed={c.reversed} lang={lang} />
@@ -525,13 +675,18 @@ export default function TarotApp() {
               <ul className="list-disc pl-5 text-sm space-y-1">
                 {reading.plan.map((a: string, i: number) => <li key={i}>{a}</li>)}
               </ul>
+              <div className="mt-2">
+                <button className="px-2 py-1 text-xs rounded border" onClick={()=>copyPlanOnly()}>{lang==='zh'? '复制行动' : 'Copy actions'}</button>
+                <button className="px-2 py-1 text-xs rounded border ml-2" onClick={()=>shareLink()}>{lang==='zh'? '复制链接' : 'Copy link'}</button>
+              </div>
             </div>
           )}
           <div className="text-xs text-gray-600 mt-1">{(lang === "zh" ? "复盘时间：" : "Review at: ") + formatDateLocal(reading.reviewAt || addDays(new Date(reading.ts), 14))}</div>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={lang === "zh" ? "写下你的行动与验证点…" : "Write actions & checkpoints…"} className="w-full border rounded-lg p-2 mt-3" />
           <div className="flex gap-2">
-            <button onClick={() => exportText()} className="px-3 py-1.5 rounded-lg border">{lang === "zh" ? "复制结果" : "Copy result"}</button>
-            <button onClick={() => downloadText()} className="px-3 py-1.5 rounded-lg border">{lang === "zh" ? ".txt 下载" : ".txt Download"}</button>
+            <button data-testid="copy-current" onClick={() => exportText()} className="px-3 py-1.5 rounded-lg border">{lang === "zh" ? "复制结果" : "Copy result"}</button>
+            <button data-testid="download-current" onClick={() => downloadText()} className="px-3 py-1.5 rounded-lg border">{lang === "zh" ? ".txt 下载" : ".txt Download"}</button>
+            <button data-testid="download-ics" onClick={() => downloadICS()} className="px-3 py-1.5 rounded-lg border">{lang === "zh" ? ".ics 日历" : ".ics Calendar"}</button>
           </div>
           {/* Review scoring inputs */}
           <ReviewScoring reading={reading} lang={lang} onSave={(rv) => {
@@ -552,14 +707,15 @@ export default function TarotApp() {
         {history.length === 0 ? (
           <div className="text-sm text-gray-500">{lang === "zh" ? "暂无记录。抽一组牌开始。" : "No records yet. Draw to start."}</div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3" data-testid="history-list">
             <div className="flex flex-wrap gap-2 mb-1">
               <button className="px-2 py-1 text-xs rounded border" onClick={downloadAllTxt}>{lang==='zh'? '导出全部 .txt':'Export all .txt'}</button>
-              <button className="px-2 py-1 text-xs rounded border" onClick={downloadAllJson}>{lang==='zh'? '导出全部 .json':'Export all .json'}</button>
-              <button className="px-2 py-1 text-xs rounded border" onClick={resetHistory}>{lang==='zh'? '清空历史':'Reset history'}</button>
+              <button data-testid="export-all-json" className="px-2 py-1 text-xs rounded border" onClick={downloadAllJson}>{lang==='zh'? '导出全部 .json':'Export all .json'}</button>
+              <button data-testid="import-json" className="px-2 py-1 text-xs rounded border" onClick={importJson}>{lang==='zh'? '导入 .json':'Import .json'}</button>
+              <button data-testid="reset-history" className="px-2 py-1 text-xs rounded border" onClick={resetHistory}>{lang==='zh'? '清空历史':'Reset history'}</button>
             </div>
             {history.map((h, i) => (
-              <div key={i} className="border rounded-xl p-3 flex flex-col gap-1">
+              <div key={i} data-testid="history-item" className="border rounded-xl p-3 flex flex-col gap-1">
                 <div className="text-sm flex flex-wrap items-center gap-2">
                   <span className="font-medium">{formatDateLocal(h.ts)}</span>
                   <Pill>{(((SPREADS as any)[h.spreadId] || (SPREADS as any).three).name[langKey(lang)])}</Pill>
@@ -577,7 +733,10 @@ export default function TarotApp() {
                 <div className="flex gap-2 mt-1">
                   <button className="px-2 py-1 text-xs rounded border" onClick={() => setReading(h)}>{lang === "zh" ? "加载" : "Load"}</button>
                   <button className="px-2 py-1 text-xs rounded border" onClick={() => exportText(h)}>{lang === "zh" ? "复制" : "Copy"}</button>
+                  <button className="px-2 py-1 text-xs rounded border" onClick={() => shareLink(h)}>{lang === "zh" ? "复制链接" : "Copy link"}</button>
+                  {h.plan?.length>0 && (<button className="px-2 py-1 text-xs rounded border" onClick={() => copyPlanOnly(h)}>{lang === "zh" ? "复制行动" : "Copy actions"}</button>)}
                   <button className="px-2 py-1 text-xs rounded border" onClick={() => downloadText(h)}>{lang === "zh" ? "下载" : "Download"}</button>
+                  <button className="px-2 py-1 text-xs rounded border" onClick={() => downloadICS(h)}>{lang === "zh" ? ".ics 日历" : ".ics Calendar"}</button>
                 </div>
               </div>
             ))}
@@ -637,9 +796,72 @@ function buildReadingText(r: any, opts: { lang: Lang; notes?: string; newline?: 
   return lines.join(nl);
 }
 
-// ========================= Self Tests (lightweight) =========================
-(function runSelfTests(){
-  try {
+// ---- ICS helpers ----
+function icsEscape(s: string) {
+  return String(s)
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+function pad2(n: number) { return String(n).padStart(2, '0'); }
+function toUTCStringBasic(d: Date) {
+  return `${d.getUTCFullYear()}${pad2(d.getUTCMonth()+1)}${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`;
+}
+function getLocalYMDHMS(date: Date, tz: string) {
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false });
+  const parts = fmt.formatToParts(date);
+  const get = (t: string)=> Number(parts.find(p=>p.type===t)?.value || '0');
+  return { y: get('year'), m: get('month'), d: get('day'), hh: get('hour'), mm: get('minute'), ss: get('second') };
+}
+function atTZToUTC(dateLike: string | number | Date, tz: string) {
+  const d = new Date(dateLike);
+  const { y, m, d: day, hh, mm, ss } = getLocalYMDHMS(d, tz);
+  // Construct the same wall time in the given tz, then convert to UTC by getting timestamp of that wall time interpreted as UTC offset naive
+  // Use Date.UTC with the extracted components, then adjust by the timezone offset between local tz wall time and UTC at that moment via trick: new Date().toLocaleString with tz already accounted in extraction
+  // Simpler: create an ISO string for the tz wall time and parse with Date as if UTC, then that Date is the UTC moment of that tz wall time.
+  const isoLocal = `${y}-${pad2(m)}-${pad2(day)}T${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`;
+  // This interprets as local timezone; to force UTC, append 'Z'
+  const asUTC = new Date(isoLocal + 'Z');
+  return asUTC;
+}
+function buildICS(r: any, opts: { lang: Lang }) {
+  const lang = opts.lang;
+  const summary = lang === 'zh' ? 'Tarot 复盘提醒' : 'Tarot Review Reminder';
+  const k = langKey(lang);
+  const spreadName = (SPREADS as any)[r.spreadId]?.name?.[k] ?? r.spreadId;
+  const title = `${summary} · ${spreadName}`;
+  const desc = buildReadingText(r, { lang, newline: '\n', notes: '' });
+  const uid = `${r.seed}-${stableHashHex(String(r.ts||''))}@tarot-app`;
+  const created = toUTCStringBasic(new Date());
+  const reviewISO = r.reviewAt || addDays(new Date(r.ts || Date.now()), 14).toISOString();
+  // Treat review time as Sydney local noon for visibility if no time provided; if time exists in reviewAt, respect it
+  const wall = atTZToUTC(reviewISO, TIMEZONE);
+  const dtstart = toUTCStringBasic(wall);
+  const dtend = toUTCStringBasic(new Date(wall.getTime() + 30*60*1000)); // 30 min
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Tarot-App//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${icsEscape(uid)}`,
+    `DTSTAMP:${created}`,
+    `DTSTART:${dtstart}`,
+    `DTEND:${dtend}`,
+    `SUMMARY:${icsEscape(title)}`,
+    `DESCRIPTION:${icsEscape(desc)}`,
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ];
+  return lines.join('\r\n');
+}
+
+// ========================= Self Tests (lightweight; dev-only) =========================
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  (function runSelfTests(){
+    try {
     // 1) 换行 join 行为正确
     const t = ["a","b","c"].join("\n");
     console.assert(t === "a\nb\nc", "join(\\n) should produce Unix newlines");
@@ -712,8 +934,14 @@ function buildReadingText(r: any, opts: { lang: Lang; notes?: string; newline?: 
   const t4 = buildReadingText(noReview, { lang: 'zh', newline: '\n' });
   console.assert(/复盘日期/.test(t4), 'fallback review date present when reviewAt missing');
 
-    console.log("[TarotApp] self-tests passed");
-  } catch (e) {
-    console.error("[TarotApp] self-tests failed", e);
-  }
-})();
+  // 11) ICS basic
+  const ics = buildICS(noReview, { lang: 'en' });
+  console.assert(/^BEGIN:VCALENDAR[\s\S]*END:VCALENDAR$/.test(ics), 'ics wrapper present');
+  console.assert(/DTSTART:/.test(ics) && /DTEND:/.test(ics), 'ics has start/end');
+
+      console.log("[TarotApp] self-tests passed");
+    } catch (e) {
+      console.error("[TarotApp] self-tests failed", e);
+    }
+  })();
+}
