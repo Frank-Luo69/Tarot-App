@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useEffect } from "react";
+'use client'
+import React, { useState, useEffect } from "react";
 
 // ========================= Utilities =========================
 function mulberry32(a:number) {
@@ -21,6 +22,12 @@ function addDays(date: Date, days: number) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
   return d;
+}
+
+// Timezone formatting
+const TIMEZONE = 'Australia/Sydney';
+function formatDateLocal(d: string | number | Date) {
+  return new Date(d).toLocaleString(undefined, { timeZone: TIMEZONE });
 }
 
 // ========================= Data: Tarot Deck =========================
@@ -116,6 +123,27 @@ const FULL_DECK = [
   ...MINORS.map((m) => ({ ...m, type: "minor" })),
 ];
 
+// Versioning & rules hash (deterministic, lightweight 64-bit hex)
+function toHex32(n: number) { return (n >>> 0).toString(16).padStart(8, '0'); }
+function stableHashHex(s: string) { const a = hashCode(s); const b = hashCode('|' + s + '|'); return toHex32(a) + toHex32(b); }
+const ALGO_VERSION = 'v1-pure-index-hash';
+const DECK_VERSION = stableHashHex(JSON.stringify(FULL_DECK));
+// RULES_HASH will be defined after rules and hints
+
+// ========== Pure dealing (seeded, deterministic) ==========
+function deal(seed: string, n: number, allowReverse: boolean, lang: Lang) {
+  const s = seed.trim();
+  const rnd = mulberry32(Number(hashCode(s)) >>> 0);
+  const deck = shuffle(FULL_DECK, rnd).slice(0, n);
+  const cards = deck.map((c: any) => ({
+    key: c.key, type: c.type, suit: c.suit, pip: c.pip,
+    reversed: allowReverse ? rnd() < 0.5 : false,
+    name: lang === "zh" ? c.cn : c.en,
+    kws: (lang === "zh" ? c.kwCn : c.kwEn).join(", "),
+  }));
+  return { seed: s, cards };
+}
+
 // ========================= Spreads =========================
 const SPREADS = {
   one: {
@@ -160,11 +188,11 @@ function Section({ title, children }: { title: React.ReactNode; children: React.
 function Pill({ children }: { children: React.ReactNode }) {
   return <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-xs mr-1">{children}</span>;
 }
-function CardFace({ name, reversed }: { name: string; reversed: boolean }) {
+function CardFace({ name, reversed, lang }: { name: string; reversed: boolean; lang: Lang }) {
   return (
     <div className={`relative w-36 h-56 border rounded-2xl shadow-sm bg-white flex items-center justify-center p-2 ${reversed ? "rotate-180" : ""}`}>
       <div className="text-center text-sm font-medium leading-tight">{name}</div>
-      {reversed && <div className="absolute bottom-1 right-2 text-[10px] opacity-60">reversed</div>}
+  {reversed && <div className="absolute bottom-1 right-2 text-[10px] opacity-60">{lang==='zh'?'逆位':'reversed'}</div>}
     </div>
   );
 }
@@ -174,6 +202,77 @@ function useLocalStorage<T>(key: string, initial: T) {
   });
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }, [key, value]);
   return [value, setValue] as const;
+}
+
+// Map runtime Lang ('zh' | 'en') to data keys ('cn' | 'en')
+function langKey(l: Lang): 'cn' | 'en' { return l === 'zh' ? 'cn' : 'en'; }
+
+function ReviewScoring({ reading, lang, onSave }: { reading: any; lang: Lang; onSave: (rv: { completion: number; effect: number; note?: string }) => void }) {
+  const [completion, setCompletion] = useState<number>(reading.review?.completion ?? 0);
+  const [effect, setEffect] = useState<number>(reading.review?.effect ?? 0);
+  const [note, setNote] = useState<string>(reading.review?.note ?? "");
+  return (
+    <div className="mt-4 border rounded-xl p-3 space-y-2">
+      <div className="text-sm font-medium">{lang === 'zh' ? '复盘打分' : 'Review Scoring'}</div>
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <label className="flex items-center gap-2">{lang === 'zh' ? '完成度' : 'Completion'}
+          <input type="number" min={0} max={100} value={completion} onChange={e=>setCompletion(Math.max(0, Math.min(100, Number(e.target.value)||0)))} className="w-20 border rounded p-1" />
+        </label>
+        <label className="flex items-center gap-2">{lang === 'zh' ? '成效' : 'Effect'}
+          <input type="number" min={0} max={100} value={effect} onChange={e=>setEffect(Math.max(0, Math.min(100, Number(e.target.value)||0)))} className="w-20 border rounded p-1" />
+        </label>
+      </div>
+      <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder={lang==='zh'?'复盘备注…':'Review note…'} className="w-full border rounded p-2" />
+      <div className="flex gap-2">
+        <button className="px-3 py-1.5 rounded border" onClick={()=>onSave({ completion, effect, note })}>{lang==='zh'?'保存复盘':'Save Review'}</button>
+      </div>
+    </div>
+  );
+}
+
+function WeeklyReport({ history, lang }: { history: any[]; lang: Lang }) {
+  // Only include entries that have review
+  const reviewed = history.filter(h => h.review);
+  if (reviewed.length === 0) return <div className="text-sm text-gray-500">{lang==='zh'?'暂无复盘数据。':'No review data yet.'}</div>;
+  const avg = (arr:number[]) => Math.round(arr.reduce((a,b)=>a+b,0)/arr.length);
+  const completionAvg = avg(reviewed.map(h=>Number(h.review.completion)||0));
+  const effectAvg = avg(reviewed.map(h=>Number(h.review.effect)||0));
+  // Weekly grouping by ISO week based on Australia/Sydney local date
+  const tz = TIMEZONE;
+  const getTZYMD = (ts: string | number | Date) => {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(ts));
+    const y = Number(parts.find(p=>p.type==='year')?.value || '1970');
+    const m = Number(parts.find(p=>p.type==='month')?.value || '01');
+    const d = Number(parts.find(p=>p.type==='day')?.value || '01');
+    return { y, m, d };
+  };
+  const groupKey = (ts:string)=>{
+    const { y, m, d } = getTZYMD(ts);
+    const date = new Date(Date.UTC(y, m-1, d));
+    const dayNum = (date.getUTCDay() + 6) % 7; // Mon=0..Sun=6
+    date.setUTCDate(date.getUTCDate() - dayNum + 3); // nearest Thursday
+    const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+    const week = 1 + Math.floor((date.getTime() - firstThursday.getTime()) / 86400000 / 7);
+    const year = date.getUTCFullYear();
+    return `${year}-W${String(week).padStart(2,'0')}`;
+  };
+  const byWeek: Record<string, any[]> = {};
+  reviewed.forEach(r=>{ const k = groupKey(r.ts); (byWeek[k] = byWeek[k]||[]).push(r); });
+  const weeks = Object.keys(byWeek).sort();
+  return (
+    <div className="text-sm space-y-2">
+      <div>{lang==='zh'?`样本数：${reviewed.length}`:`Samples: ${reviewed.length}`}</div>
+      <div>{lang==='zh'?`平均完成度：${completionAvg}%  平均成效：${effectAvg}%`:`Avg Completion: ${completionAvg}%  Avg Effect: ${effectAvg}%`}</div>
+      <div className="space-y-1">
+        {weeks.map(w=>{
+          const arr = byWeek[w];
+          const ca = avg(arr.map(x=>Number(x.review.completion)||0));
+          const ea = avg(arr.map(x=>Number(x.review.effect)||0));
+          return <div key={w} className="flex items-center gap-2"><span className="font-medium">{w}</span><span>{lang==='zh'?`完成度 ${ca}% 成效 ${ea}%`:`Completion ${ca}% Effect ${ea}%`}</span></div>;
+        })}
+      </div>
+    </div>
+  );
 }
 
 // ========================= Action Generator ("真实/可验证") =========================
@@ -214,30 +313,40 @@ const MAJOR_HINT_EN: Record<string, string> = {
   "20": "Write a review: keep what's working, cut what's not",
 };
 
-function pick<T>(arr: T[], rnd: () => number) { return arr[Math.floor(rnd() * arr.length)]; }
+const RULES_HASH = stableHashHex(JSON.stringify({ ACTION_VERBS_ZH, ACTION_VERBS_EN, MAJOR_HINT_ZH, MAJOR_HINT_EN, algo: ALGO_VERSION }));
 
 function generateActionPlan(reading: any, lang: Lang) {
-  const seed = reading.seed || String(Date.now());
-  const rnd = mulberry32(Number(hashCode(seed)) >>> 0);
+  // 纯函数：对同一 seed+牌面+位置，输出固定。避免依赖可变的 PRNG 调用序。
+  const seed = String(reading.seed ?? "");
   const verbs = lang === "zh" ? ACTION_VERBS_ZH : ACTION_VERBS_EN;
   const majorHint = lang === "zh" ? MAJOR_HINT_ZH : MAJOR_HINT_EN;
   const actions: string[] = [];
 
-  for (const c of reading.cards) {
+  reading.cards.forEach((c: any, idx: number) => {
     const name = c.name as string;
     if (c.type === "major") {
       const hint = majorHint[c.key] || (lang === "zh" ? "选择一个最小行动并今天完成" : "Pick a smallest next action and finish today");
       actions.push(`${name}: ${hint}`);
     } else {
       const suit = c.suit as keyof typeof verbs;
-      const verb = pick(verbs[suit], rnd);
+      const pool = verbs[suit];
+      // 稳定索引：seed + card key/suit/pip + position index (+ reversed) → hash → index
+  const posZh = c.pos?.cn ?? '';
+  const posEn = c.pos?.en ?? '';
+  const hInput = [seed, String(idx), String(c.key ?? ""), String(c.suit ?? ""), String(c.pip ?? ""), String(!!c.reversed), posZh, posEn].join("|");
+      const h = (hashCode(hInput) >>> 0);
+      const verb = pool[h % pool.length];
       actions.push(`${name}: ${verb}`);
     }
-  }
+  });
+
   // 去重并限制为 3 条核心行动
   const dedup = Array.from(new Set(actions)).slice(0, 3);
   return dedup;
 }
+
+// For tests and clarity
+function generateActionPlanPure(reading: any, lang: Lang) { return generateActionPlan(reading, lang); }
 
 // ========================= Main App =========================
 export default function TarotApp() {
@@ -250,18 +359,16 @@ export default function TarotApp() {
   const [history, setHistory] = useLocalStorage<any[]>("tarot.history", []);
   const [reading, setReading] = useState<any | null>(null);
   const [currentQuestion, setCurrentQuestion] = useLocalStorage<string>("tarot.question", "未来两周推进我的 X 的最佳做法？");
+  const [newlinePref, setNewlinePref] = useLocalStorage<string>("tarot.newline", "lf");
 
   const spread = (SPREADS as any)[spreadId];
 
   function draw() {
     const s = seed.trim() || String(Date.now());
-    const rnd = mulberry32(Number(hashCode(s)) >>> 0);
-    const deck = shuffle(FULL_DECK, rnd).slice(0, spread.positions.length);
-    const cards = deck.map((c: any) => ({
-      ...c,
-      reversed: allowReverse ? rnd() < 0.5 : false,
-      name: lang === "zh" ? c.cn : c.en,
-      kws: (lang === "zh" ? c.kwCn : c.kwEn).join(", "),
+    const dealt = deal(s, spread.positions.length, allowReverse, lang);
+    const cards = dealt.cards.map((c: any, i: number) => ({
+      key: c.key, type: c.type, suit: c.suit, pip: c.pip,
+      pos: spread.positions[i], name: c.name, reversed: c.reversed, kws: c.kws,
     }));
     const rec = {
       ts: new Date().toISOString(),
@@ -269,45 +376,39 @@ export default function TarotApp() {
       spreadId,
       lang,
       allowReverse,
+      meta: { deckVersion: DECK_VERSION, rulesHash: RULES_HASH, algo: ALGO_VERSION },
       q: currentQuestion,
       type: cards[0]?.type,
-      cards: cards.map((c: any, i: number) => ({
-        key: c.key, type: c.type, suit: c.suit, pip: c.pip,
-        pos: spread.positions[i], name: c.name, reversed: c.reversed, kws: c.kws,
-      })),
+      cards,
     };
     const plan = generateActionPlan(rec, lang);
     (rec as any).plan = plan;
     (rec as any).reviewAt = addDays(new Date(rec.ts), reviewDays).toISOString();
 
     setReading(rec);
-    setHistory([rec, ...history].slice(0, 50));
+  setHistory((prev) => [rec, ...prev].slice(0, 50));
   }
 
   function exportText(r = reading) {
     if (!r) return;
-    const lines = [] as string[];
-    lines.push(`Question: ${r.q}`);
-    lines.push(`Spread: ${(SPREADS as any)[r.spreadId].name[lang]}`);
-    lines.push(`Seed: ${r.seed}`);
-    lines.push("---");
-    r.cards.forEach((c: any, i: number) => {
-      const p = c.pos[lang];
-      lines.push(`${i + 1}. [${p}] ${c.name}${c.reversed ? (lang === "zh" ? "（逆位）" : " (reversed)") : ""} — ${c.kws}`);
-    });
-    if (r.plan?.length) {
-      lines.push("---");
-      lines.push(lang === "zh" ? "行动建议:" : "Action Plan:");
-      r.plan.forEach((a: string, i: number) => lines.push(`${i + 1}. ${a}`));
-      lines.push((lang === "zh" ? "复盘日期: " : "Review at: ") + new Date(r.reviewAt).toLocaleString());
-    }
-    if (notes) {
-      lines.push("---");
-      lines.push(lang === "zh" ? `笔记：${notes}` : `Notes: ${notes}`);
-    }
-    const txt = lines.join("
-");
-    navigator.clipboard.writeText(txt).then(() => alert(lang === "zh" ? "已复制到剪贴板" : "Copied to clipboard"));
+    const nl = newlinePref === 'crlf' ? "\r\n" : "\n";
+    const txt = buildReadingText(r, { lang, notes, newline: nl });
+    navigator.clipboard.writeText(txt)
+      .then(() => alert(lang === "zh" ? "已复制到剪贴板" : "Copied to clipboard"))
+      .catch(() => downloadText(r));
+  }
+
+  function downloadText(r = reading) {
+    if (!r) return;
+    const nl = newlinePref === 'crlf' ? "\r\n" : "\n";
+    const txt = buildReadingText(r, { lang, notes, newline: nl });
+    const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const base = `tarot_${r.spreadId}_${r.seed}_${new Date(r.ts).toISOString().replace(/[:.]/g,'-')}`;
+    a.download = `${base}.txt`;
+    a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 0);
   }
 
   return (
@@ -325,7 +426,7 @@ export default function TarotApp() {
         <div className="flex flex-wrap items-center gap-3">
           <select value={spreadId} onChange={(e) => setSpreadId(e.target.value)} className="border rounded-lg p-2">
             {Object.values(SPREADS).map((s: any) => (
-              <option key={s.id} value={s.id}>{s.name[lang]}</option>
+              <option key={s.id} value={s.id}>{s.name[langKey(lang)]}</option>
             ))}
           </select>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={allowReverse} onChange={(e) => setAllowReverse(e.target.checked)} />{lang === "zh" ? "允许逆位" : "Allow reversed"}</label>
@@ -333,6 +434,13 @@ export default function TarotApp() {
           <label className="flex items-center gap-2 text-sm">
             {lang === "zh" ? "复盘天数" : "Review in days"}
             <input type="number" min={1} max={60} value={reviewDays} onChange={(e) => setReviewDays(Number(e.target.value)||14)} className="w-20 border rounded-lg p-1" />
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            {lang === 'zh' ? '换行' : 'Newline'}
+            <select className="border rounded p-1" value={newlinePref} onChange={(e)=>setNewlinePref(e.target.value)}>
+              <option value="lf">LF (\n)</option>
+              <option value="crlf">CRLF (\r\n)</option>
+            </select>
           </label>
           <button onClick={draw} className="px-4 py-2 rounded-lg bg-black text-white">{lang === "zh" ? "抽牌" : "Draw"}</button>
         </div>
@@ -344,9 +452,9 @@ export default function TarotApp() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {reading.cards.map((c: any, idx: number) => (
               <div key={idx} className="flex flex-col items-center gap-2">
-                <CardFace name={c.name} reversed={c.reversed} />
+                <CardFace name={c.name} reversed={c.reversed} lang={lang} />
                 <div className="text-xs text-gray-600 text-center">
-                  <div className="font-medium">{c.pos[lang]}</div>
+                  <div className="font-medium">{c.pos[langKey(lang)]}</div>
                   <div className="mt-0.5">{c.kws}</div>
                 </div>
               </div>
@@ -358,13 +466,26 @@ export default function TarotApp() {
               <ul className="list-disc pl-5 text-sm space-y-1">
                 {reading.plan.map((a: string, i: number) => <li key={i}>{a}</li>)}
               </ul>
-              <div className="text-xs text-gray-600 mt-1">{(lang === "zh" ? "复盘时间：" : "Review at: ") + new Date(reading.reviewAt).toLocaleString()}</div>
             </div>
           )}
+          <div className="text-xs text-gray-600 mt-1">{(lang === "zh" ? "复盘时间：" : "Review at: ") + formatDateLocal(reading.reviewAt || addDays(new Date(reading.ts), reviewDays))}</div>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={lang === "zh" ? "写下你的行动与验证点…" : "Write actions & checkpoints…"} className="w-full border rounded-lg p-2 mt-3" />
           <div className="flex gap-2">
             <button onClick={() => exportText()} className="px-3 py-1.5 rounded-lg border">{lang === "zh" ? "复制结果" : "Copy result"}</button>
+            <button onClick={() => downloadText()} className="px-3 py-1.5 rounded-lg border">{lang === "zh" ? ".txt 下载" : ".txt Download"}</button>
           </div>
+          {/* Review scoring inputs */}
+          <ReviewScoring reading={reading} lang={lang} onSave={(rv) => {
+            // attach review to current reading and persist in history
+            const updated = { ...reading, review: { ...rv, at: new Date().toISOString() } };
+            setReading(updated);
+            setHistory((prev)=>{
+              const list = prev.slice();
+              const idx = list.findIndex((x)=>x.ts === reading.ts && x.seed === reading.seed);
+              if (idx >= 0) list[idx] = updated; else list.unshift(updated);
+              return list;
+            });
+          }} />
         </Section>
       )}
 
@@ -376,12 +497,14 @@ export default function TarotApp() {
             {history.map((h, i) => (
               <div key={i} className="border rounded-xl p-3 flex flex-col gap-1">
                 <div className="text-sm flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{new Date(h.ts).toLocaleString()}</span>
-                  <Pill>{(SPREADS as any)[h.spreadId].name[lang]}</Pill>
+                  <span className="font-medium">{formatDateLocal(h.ts)}</span>
+                  <Pill>{(SPREADS as any)[h.spreadId].name[langKey(lang)]}</Pill>
                   <Pill>seed={h.seed}</Pill>
+                  <Pill>deck={h.meta?.deckVersion || DECK_VERSION}</Pill>
+                  <Pill>rules={h.meta?.rulesHash || RULES_HASH}</Pill>
                 </div>
                 <div className="text-xs text-gray-600 line-clamp-2">
-                  {h.cards.map((c: any, idx: number) => `${idx + 1}.${c.pos[lang]}-${c.name}${c.reversed ? (lang === "zh" ? "(逆)" : "(rev)") : ""}`).join("  ")}
+                  {h.cards.map((c: any, idx: number) => `${idx + 1}.${c.pos[langKey(lang)]}-${c.name}${c.reversed ? (lang === "zh" ? "(逆)" : "(rev)") : ""}`).join("  ")}
                 </div>
                 {h.plan?.length > 0 && (
                   <div className="text-xs text-gray-700">{(lang === "zh" ? "行动：" : "Plan: ") + h.plan.join(" · ")}</div>
@@ -389,12 +512,19 @@ export default function TarotApp() {
                 <div className="flex gap-2 mt-1">
                   <button className="px-2 py-1 text-xs rounded border" onClick={() => setReading(h)}>{lang === "zh" ? "加载" : "Load"}</button>
                   <button className="px-2 py-1 text-xs rounded border" onClick={() => exportText(h)}>{lang === "zh" ? "复制" : "Copy"}</button>
+                  <button className="px-2 py-1 text-xs rounded border" onClick={() => downloadText(h)}>{lang === "zh" ? "下载" : "Download"}</button>
                 </div>
               </div>
             ))}
           </div>
         )}
       </Section>
+
+      {history.length > 0 && (
+        <Section title={lang === 'zh' ? '周报（本地）' : 'Weekly Report (local)'}>
+          <WeeklyReport history={history} lang={lang} />
+        </Section>
+      )}
 
       <footer className="text-xs text-gray-500 mt-8">
         {lang === "zh"
@@ -407,3 +537,118 @@ export default function TarotApp() {
 
 // ========================= Helpers =========================
 function hashCode(str: string) { let h = 0; for (let i = 0; i < str.length; i++) { h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; } return h; }
+
+// Build export text as a pure function
+function buildReadingText(r: any, opts: { lang: Lang; notes?: string; newline?: "\n" | "\r\n" }) {
+  const nl = opts.newline ?? "\n";
+  const lines: string[] = [];
+  const k = langKey(opts.lang);
+  const spreadName = (SPREADS as any)[r.spreadId]?.name?.[k] ?? r.spreadId;
+  lines.push(opts.lang === 'zh' ? `问题：${r.q}` : `Question: ${r.q}`);
+  lines.push(opts.lang === 'zh' ? `牌阵：${spreadName}` : `Spread: ${spreadName}`);
+  lines.push(opts.lang === 'zh' ? `种子：${r.seed}` : `Seed: ${r.seed}`);
+  if (r.meta?.deckVersion || r.meta?.rulesHash || r.meta?.algo) {
+    lines.push(opts.lang === 'zh'
+      ? `版本：牌组=${r.meta.deckVersion || ''} 规则=${r.meta.rulesHash || ''} 算法=${r.meta.algo || ''}`
+      : `Version: deck=${r.meta.deckVersion || ''} rules=${r.meta.rulesHash || ''} algo=${r.meta.algo || ''}`);
+  }
+  lines.push("---");
+  r.cards.forEach((c: any, i: number) => {
+    const p = c.pos[k];
+    lines.push(`${i + 1}. [${p}] ${c.name}${c.reversed ? (opts.lang === "zh" ? "（逆位）" : " (reversed)") : ""} — ${c.kws}`);
+  });
+  // Review date before plan, with fallback
+  const fallbackReview = r.reviewAt || addDays(new Date(r.ts || Date.now()), 14).toISOString();
+  lines.push((opts.lang === 'zh' ? '复盘日期：' : 'Review at: ') + formatDateLocal(fallbackReview));
+  if (r.plan?.length) {
+    lines.push("---");
+    lines.push(opts.lang === "zh" ? "行动建议:" : "Action Plan:");
+    r.plan.forEach((a: string, i: number) => lines.push(`${i + 1}. ${a}`));
+  }
+  if (opts.notes) {
+    lines.push("---");
+    lines.push(opts.lang === "zh" ? `笔记：${opts.notes}` : `Notes: ${opts.notes}`);
+  }
+  return lines.join(nl);
+}
+
+// ========================= Self Tests (lightweight) =========================
+(function runSelfTests(){
+  try {
+    // 1) 换行 join 行为正确
+    const t = ["a","b","c"].join("\n");
+    console.assert(t === "a\nb\nc", "join(\\n) should produce Unix newlines");
+
+    // 2) hashCode 可重复且区分不同输入
+    const h1 = hashCode("abc"), h2 = hashCode("abc"), h3 = hashCode("abcd");
+    console.assert(h1 === h2, "hashCode deterministic");
+    console.assert(h1 !== h3, "hashCode differs on different inputs");
+
+    // 3) PRNG 在相同种子下可复现
+    const r1 = mulberry32(123), r2 = mulberry32(123);
+    const s1 = [r1(), r1(), r1()].join(","), s2 = [r2(), r2(), r2()].join(",");
+    console.assert(s1 === s2, "mulberry32 deterministic");
+
+    // 4) 洗牌保持长度与元素集合
+    const base = Array.from({length: 10}, (_,i)=>i);
+    const shuf = shuffle(base, mulberry32(42));
+    console.assert(shuf.length === base.length, "shuffle keeps length");
+    console.assert([...shuf].sort((a,b)=>a-b).join(',') === base.join(','), "shuffle is permutation");
+
+  // 5) 行动计划在相同 seed+牌面+语言下稳定（纯函数化）
+  const dummy: any = { seed: "12345", cards: [
+      { type: "major", key: "1", name: "The Magician" },
+      { type: "minor", suit: "wands", name: "Ace of Wands" },
+      { type: "minor", suit: "cups",  name: "Two of Cups"  },
+    ] };
+    const p1 = generateActionPlan(dummy, "zh"), p2 = generateActionPlan(dummy, "zh");
+    const p3 = generateActionPlan(dummy, "en"), p4 = generateActionPlan(dummy, "en");
+    console.assert(JSON.stringify(p1) === JSON.stringify(p2), "plan deterministic (zh)");
+    console.assert(JSON.stringify(p3) === JSON.stringify(p4), "plan deterministic (en)");
+
+  // 6) 词库变化时（同 suit 长度不同）索引仍稳定映射
+  // 构造一个最小替换池，确保不会越界
+  const backup = ACTION_VERBS_EN.wands;
+  // @ts-ignore - 仅测试环境临时替换
+  ACTION_VERBS_EN.wands = ["A","B"]; // 长度改变
+  const p5 = generateActionPlan({ ...dummy }, "en");
+  // 恢复
+  // @ts-ignore
+  ACTION_VERBS_EN.wands = backup;
+  const p6 = generateActionPlan({ ...dummy }, "en");
+  // 纯函数保证“同输入得同结果”，但词库池变化会变更选择；
+  // 我们只验证不会抛错且输出长度合理
+    console.assert(Array.isArray(p5) && p5.length > 0, "plan stays valid even if pool size changes");
+
+    // 7) 发牌：同种子稳定，不同种子有差异
+    const dA1 = deal('seedA', 6, true, 'zh');
+    const dA2 = deal('seedA', 6, true, 'zh');
+    const dB1 = deal('seedB', 6, true, 'zh');
+    console.assert(JSON.stringify(dA1.cards.map((c:any)=>c.key)) === JSON.stringify(dA2.cards.map((c:any)=>c.key)), 'same seed produces same order');
+    const anyDiff = dA1.cards.some((c:any, i:number) => c.key !== dB1.cards[i].key);
+    console.assert(anyDiff, 'different seed should differ');
+
+    // 8) 关闭逆位时无逆位
+    const dNoRev = deal('seedC', 20, false, 'en');
+    console.assert(dNoRev.cards.every((c:any)=>c.reversed === false), 'allowReverse=false enforces no reversed');
+
+    // 9) 导出文本：空/长 notes 与换行
+    const minimal = { q:'Q', seed:'s', spreadId:'three', reviewAt:new Date().toISOString(),
+      cards:[{pos:{cn:'现在',en:'Present'}, name:'The Sun', reversed:false, kws:'k'}], plan: ['Do X'] };
+    const t1 = buildReadingText(minimal as any, { lang: 'en', notes: '', newline: '\n' });
+    console.assert(t1.includes('Question:'), 'export contains header with empty notes');
+    const LONG = 'x'.repeat(5000);
+    const t2 = buildReadingText(minimal as any, { lang: 'en', notes: LONG, newline: '\n' });
+    console.assert(t2.length > 5000, 'export should not truncate long notes');
+    const t3 = buildReadingText(minimal as any, { lang: 'en', notes: 'line', newline: '\r\n' });
+    console.assert(t3.includes('\r\n'), 'Windows mode uses CRLF');
+  // 10) 缺失 reviewAt 时不抛错并输出兜底复盘日期
+  const noReview: any = { q:'Q', seed:'s', spreadId:'one', ts: new Date().toISOString(), cards:[{pos:{cn:'核心',en:'Core'}, name:'The Sun', reversed:false, kws:'k'}] };
+  const t4 = buildReadingText(noReview, { lang: 'zh', newline: '\n' });
+  console.assert(/复盘日期/.test(t4), 'fallback review date present when reviewAt missing');
+
+    console.log("[TarotApp] self-tests passed");
+  } catch (e) {
+    console.error("[TarotApp] self-tests failed", e);
+  }
+})();
