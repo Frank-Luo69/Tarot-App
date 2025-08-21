@@ -14,6 +14,11 @@ A minimal Next.js + TypeScript app that lets you draw Tarot cards, generate dete
 - Lint
   - npm run lint
 
+## Testing
+- E2E uses Playwright. The test server listens on port 3100.
+  - npm run build
+  - npm run e2e
+
 ## Features
 - Deterministic, pure-function action plan generation
 - Robust export: clipboard + file, CRLF/\n newline preference, localized headers, version + rules hash in export

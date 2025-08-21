@@ -27,12 +27,5 @@ jobs:
         run: npm run lint
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
-      - name: Start server
-        run: |
-          nohup npm start >/dev/null 2>&1 &
-          for i in {1..60}; do
-            if curl -fsS http://localhost:3000/api/health >/dev/null; then echo "server up"; break; fi
-            sleep 1
-          done
       - name: E2E tests
         run: npm run e2e

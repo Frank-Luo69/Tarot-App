@@ -174,6 +174,21 @@ const SPREADS = {
   },
 };
 
+const SPREAD_DESC: Record<string, { zh: string; en: string }> = {
+  one: {
+    zh: '一张｜核心指引：快速给出一个核心方向，适合非常聚焦的问题。',
+    en: 'One card | Core guidance: quickest single direction for a focused question.'
+  },
+  three: {
+    zh: '三张｜过去/现在/下一步：最适合行动落地，明确下一步做什么。',
+    en: 'Three | Past/Present/Next: best for execution, clarifies the next step.'
+  },
+  six: {
+    zh: '简化十字（6）：看全局/阻碍/根因/外部/建议/结果，适合复杂课题梳理。',
+    en: 'Simplified Celtic Cross (6): global view/challenges/roots/external/advice/outcome for complex topics.'
+  }
+};
+
 type Lang = "zh" | "en";
 
 // ========================= UI Helpers =========================
@@ -727,8 +742,11 @@ export default function TarotApp() {
           <button data-testid="draw" onClick={draw} className="btn btn-primary">{lang === "zh" ? "抽牌" : "Draw"}</button>
           <button onClick={exampleReading} className="btn">{lang==='zh'? '示例阅读' : 'Example Reading'}</button>
         </div>
+        <p className="text-xs text-gray-500">
+          {lang==='zh' ? (SPREAD_DESC[spreadId]?.zh || '') : (SPREAD_DESC[spreadId]?.en || '')}
+        </p>
         <p className="text-xs text-gray-500">{lang === "zh" ? "提示：设置种子可让结果可复现；此工具用于自我反思，不替代医疗/法律/投资建议。" : "Tip: Set a seed for reproducible draws. For reflection only; not medical/legal/financial advice."}</p>
-        <p className="text-xs text-gray-500">{lang==='zh' ? '逆位：牌倒置，表示能量受阻或内化；复盘：到期回看完成度与成效，用数据改进方法。' : 'Reversed: upside‑down card signals blocked/internalized energy; Review: reflect on completion and effect to improve.'}</p>
+        <p className="text-xs text-gray-500">{lang==='zh' ? '逆位：牌倒置，表示能量受阻或内化；不确定可先不勾选。复盘：到期回看完成度与成效，用数据改进方法。' : 'Reversed: upside‑down means blocked/internalized energy; if unsure, leave it off. Review: reflect on completion and effect to improve.'}</p>
       </Section>
 
       {reading && (
