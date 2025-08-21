@@ -621,37 +621,37 @@ export default function TarotApp() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6 text-gray-800">
+  <div className="container-prose">
       <header className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold">Tarot · {lang === "zh" ? "结构化自我反思（MVP）" : "Structured Reflection (MVP)"}</h1>
         <div className="flex items-center gap-2">
-          <button className={`px-3 py-1 rounded-full border ${lang === "zh" ? "bg-black text-white" : "bg-white"}`} onClick={() => setLang("zh")}>中</button>
-          <button className={`px-3 py-1 rounded-full border ${lang === "en" ? "bg-black text-white" : "bg-white"}`} onClick={() => setLang("en")}>EN</button>
+          <button className={`btn ${lang === "zh" ? "btn-primary" : "btn-ghost"}`} onClick={() => setLang("zh")}>中</button>
+          <button className={`btn ${lang === "en" ? "btn-primary" : "btn-ghost"}`} onClick={() => setLang("en")}>EN</button>
         </div>
       </header>
 
       <Section title={lang === "zh" ? "问题设置" : "Question"}>
-        <input data-testid="question-input" value={currentQuestion} onChange={(e) => setCurrentQuestion(e.target.value)} className="w-full border rounded-lg p-2" placeholder={lang === "zh" ? "例如：两周内推进 X 的最佳做法？" : "e.g., Best way to advance X in two weeks?"} />
+  <input data-testid="question-input" value={currentQuestion} onChange={(e) => setCurrentQuestion(e.target.value)} className="w-full input" placeholder={lang === "zh" ? "例如：两周内推进 X 的最佳做法？" : "e.g., Best way to advance X in two weeks?"} />
         <div className="flex flex-wrap items-center gap-3">
-          <select data-testid="spread-select" value={spreadId} onChange={(e) => setSpreadId(e.target.value)} className="border rounded-lg p-2">
+          <select data-testid="spread-select" value={spreadId} onChange={(e) => setSpreadId(e.target.value)} className="select">
             {Object.values(SPREADS).map((s: any) => (
               <option key={s.id} value={s.id}>{s.name[langKey(lang)]}</option>
             ))}
           </select>
-          <label className="flex items-center gap-2 text-sm"><input data-testid="allow-reverse" type="checkbox" checked={allowReverse} onChange={(e) => setAllowReverse(e.target.checked)} />{lang === "zh" ? "允许逆位" : "Allow reversed"}</label>
-          <input data-testid="seed-input" value={seed} onChange={(e) => setSeed(e.target.value)} className="border rounded-lg p-2" placeholder={lang === "zh" ? "可选：种子（可复现）" : "Optional: seed (reproducible)"} />
+          <label className="flex items-center gap-2 text-sm"><input className="checkbox" data-testid="allow-reverse" type="checkbox" checked={allowReverse} onChange={(e) => setAllowReverse(e.target.checked)} />{lang === "zh" ? "允许逆位" : "Allow reversed"}</label>
+          <input data-testid="seed-input" value={seed} onChange={(e) => setSeed(e.target.value)} className="input" placeholder={lang === "zh" ? "可选：种子（可复现）" : "Optional: seed (reproducible)"} />
           <label className="flex items-center gap-2 text-sm">
             {lang === "zh" ? "复盘天数" : "Review in days"}
-            <input type="number" min={1} max={60} value={reviewDays} onChange={(e) => setReviewDays(Number(e.target.value)||14)} className="w-20 border rounded-lg p-1" />
+            <input type="number" min={1} max={60} value={reviewDays} onChange={(e) => setReviewDays(Number(e.target.value)||14)} className="w-20 input" />
           </label>
           <label className="flex items-center gap-2 text-sm">
             {lang === 'zh' ? '换行' : 'Newline'}
-            <select data-testid="newline-select" className="border rounded p-1" value={newlinePref} onChange={(e)=>setNewlinePref(e.target.value)}>
+            <select data-testid="newline-select" className="select" value={newlinePref} onChange={(e)=>setNewlinePref(e.target.value)}>
               <option value="lf">LF (\n)</option>
               <option value="crlf">CRLF (\r\n)</option>
             </select>
           </label>
-          <button data-testid="draw" onClick={draw} className="px-4 py-2 rounded-lg bg-black text-white">{lang === "zh" ? "抽牌" : "Draw"}</button>
+          <button data-testid="draw" onClick={draw} className="btn btn-primary">{lang === "zh" ? "抽牌" : "Draw"}</button>
         </div>
         <p className="text-xs text-gray-500">{lang === "zh" ? "提示：设置种子可让结果可复现；此工具用于自我反思，不替代医疗/法律/投资建议。" : "Tip: Set a seed for reproducible draws. For reflection only; not medical/legal/financial advice."}</p>
       </Section>
@@ -676,17 +676,17 @@ export default function TarotApp() {
                 {reading.plan.map((a: string, i: number) => <li key={i}>{a}</li>)}
               </ul>
               <div className="mt-2">
-                <button className="px-2 py-1 text-xs rounded border" onClick={()=>copyPlanOnly()}>{lang==='zh'? '复制行动' : 'Copy actions'}</button>
-                <button className="px-2 py-1 text-xs rounded border ml-2" onClick={()=>shareLink()}>{lang==='zh'? '复制链接' : 'Copy link'}</button>
+                <button className="btn btn-xs" onClick={()=>copyPlanOnly()}>{lang==='zh'? '复制行动' : 'Copy actions'}</button>
+                <button className="btn btn-xs" onClick={()=>shareLink()}>{lang==='zh'? '复制链接' : 'Copy link'}</button>
               </div>
             </div>
           )}
           <div className="text-xs text-gray-600 mt-1">{(lang === "zh" ? "复盘时间：" : "Review at: ") + formatDateLocal(reading.reviewAt || addDays(new Date(reading.ts), 14))}</div>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={lang === "zh" ? "写下你的行动与验证点…" : "Write actions & checkpoints…"} className="w-full border rounded-lg p-2 mt-3" />
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={lang === "zh" ? "写下你的行动与验证点…" : "Write actions & checkpoints…"} className="w-full input mt-3" />
           <div className="flex gap-2">
-            <button data-testid="copy-current" onClick={() => exportText()} className="px-3 py-1.5 rounded-lg border">{lang === "zh" ? "复制结果" : "Copy result"}</button>
-            <button data-testid="download-current" onClick={() => downloadText()} className="px-3 py-1.5 rounded-lg border">{lang === "zh" ? ".txt 下载" : ".txt Download"}</button>
-            <button data-testid="download-ics" onClick={() => downloadICS()} className="px-3 py-1.5 rounded-lg border">{lang === "zh" ? ".ics 日历" : ".ics Calendar"}</button>
+            <button data-testid="copy-current" onClick={() => exportText()} className="btn">{lang === "zh" ? "复制结果" : "Copy result"}</button>
+            <button data-testid="download-current" onClick={() => downloadText()} className="btn">{lang === "zh" ? ".txt 下载" : ".txt Download"}</button>
+            <button data-testid="download-ics" onClick={() => downloadICS()} className="btn">{lang === "zh" ? ".ics 日历" : ".ics Calendar"}</button>
           </div>
           {/* Review scoring inputs */}
           <ReviewScoring reading={reading} lang={lang} onSave={(rv) => {
@@ -709,10 +709,10 @@ export default function TarotApp() {
         ) : (
           <div className="space-y-3" data-testid="history-list">
             <div className="flex flex-wrap gap-2 mb-1">
-              <button className="px-2 py-1 text-xs rounded border" onClick={downloadAllTxt}>{lang==='zh'? '导出全部 .txt':'Export all .txt'}</button>
-              <button data-testid="export-all-json" className="px-2 py-1 text-xs rounded border" onClick={downloadAllJson}>{lang==='zh'? '导出全部 .json':'Export all .json'}</button>
-              <button data-testid="import-json" className="px-2 py-1 text-xs rounded border" onClick={importJson}>{lang==='zh'? '导入 .json':'Import .json'}</button>
-              <button data-testid="reset-history" className="px-2 py-1 text-xs rounded border" onClick={resetHistory}>{lang==='zh'? '清空历史':'Reset history'}</button>
+              <button className="btn btn-xs" onClick={downloadAllTxt}>{lang==='zh'? '导出全部 .txt':'Export all .txt'}</button>
+              <button data-testid="export-all-json" className="btn btn-xs" onClick={downloadAllJson}>{lang==='zh'? '导出全部 .json':'Export all .json'}</button>
+              <button data-testid="import-json" className="btn btn-xs" onClick={importJson}>{lang==='zh'? '导入 .json':'Import .json'}</button>
+              <button data-testid="reset-history" className="btn btn-xs" onClick={resetHistory}>{lang==='zh'? '清空历史':'Reset history'}</button>
             </div>
             {history.map((h, i) => (
               <div key={i} data-testid="history-item" className="border rounded-xl p-3 flex flex-col gap-1">
@@ -731,12 +731,12 @@ export default function TarotApp() {
                   <div className="text-xs text-gray-700">{(lang === "zh" ? "行动：" : "Plan: ") + h.plan.join(" · ")}</div>
                 )}
                 <div className="flex gap-2 mt-1">
-                  <button className="px-2 py-1 text-xs rounded border" onClick={() => setReading(h)}>{lang === "zh" ? "加载" : "Load"}</button>
-                  <button className="px-2 py-1 text-xs rounded border" onClick={() => exportText(h)}>{lang === "zh" ? "复制" : "Copy"}</button>
-                  <button className="px-2 py-1 text-xs rounded border" onClick={() => shareLink(h)}>{lang === "zh" ? "复制链接" : "Copy link"}</button>
-                  {h.plan?.length>0 && (<button className="px-2 py-1 text-xs rounded border" onClick={() => copyPlanOnly(h)}>{lang === "zh" ? "复制行动" : "Copy actions"}</button>)}
-                  <button className="px-2 py-1 text-xs rounded border" onClick={() => downloadText(h)}>{lang === "zh" ? "下载" : "Download"}</button>
-                  <button className="px-2 py-1 text-xs rounded border" onClick={() => downloadICS(h)}>{lang === "zh" ? ".ics 日历" : ".ics Calendar"}</button>
+                  <button className="btn btn-xs" onClick={() => setReading(h)}>{lang === "zh" ? "加载" : "Load"}</button>
+                  <button className="btn btn-xs" onClick={() => exportText(h)}>{lang === "zh" ? "复制" : "Copy"}</button>
+                  <button className="btn btn-xs" onClick={() => shareLink(h)}>{lang === "zh" ? "复制链接" : "Copy link"}</button>
+                  {h.plan?.length>0 && (<button className="btn btn-xs" onClick={() => copyPlanOnly(h)}>{lang === "zh" ? "复制行动" : "Copy actions"}</button>)}
+                  <button className="btn btn-xs" onClick={() => downloadText(h)}>{lang === "zh" ? "下载" : "Download"}</button>
+                  <button className="btn btn-xs" onClick={() => downloadICS(h)}>{lang === "zh" ? ".ics 日历" : ".ics Calendar"}</button>
                 </div>
               </div>
             ))}
