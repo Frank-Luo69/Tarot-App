@@ -463,6 +463,14 @@ export default function TarotApp() {
     setTimeout(()=>{ draw(); }, 0);
   }
 
+  // 仅清空当前输入与结果，保留历史
+  function resetCurrent() {
+    setSeed("");
+    setCurrentQuestion("");
+    setNotes("");
+    setReading(null);
+  }
+
   // On first load, parse URL search params to restore and auto draw
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -727,6 +735,9 @@ export default function TarotApp() {
             ))}
           </select>
           <label className="flex items-center gap-2 text-sm"><input className="checkbox" data-testid="allow-reverse" type="checkbox" checked={allowReverse} onChange={(e) => setAllowReverse(e.target.checked)} title={lang==='zh'?'可能出现倒置牌面，改变语境':'Allow upside-down cards affecting context'} />{lang === "zh" ? "允许逆位" : "Allow reversed"}</label>
+          <span className="text-xs text-gray-500" title={lang==='zh'? '初学者建议不勾选；当你想引入“阻滞/内化”的语境时再勾选。' : 'If you are new, leave it off; turn on when you want blocked/internalized context.'}>
+            {lang==='zh' ? '建议：初学者先不勾；需要更细语境时再开' : 'Tip: newcomers leave off; enable for nuanced context'}
+          </span>
           <input data-testid="seed-input" value={seed} onChange={(e) => setSeed(e.target.value)} className="input" placeholder={lang === "zh" ? "可选：种子（可复现）" : "Optional: seed (reproducible)"} title={lang==='zh'?'同一种子+设置会得到相同结果':'Same seed+settings reproduce identical result'} />
           <label className="flex items-center gap-2 text-sm">
             {lang === "zh" ? "复盘天数" : "Review in days"}
@@ -741,12 +752,14 @@ export default function TarotApp() {
           </label>
           <button data-testid="draw" onClick={draw} className="btn btn-primary">{lang === "zh" ? "抽牌" : "Draw"}</button>
           <button onClick={exampleReading} className="btn">{lang==='zh'? '示例阅读' : 'Example Reading'}</button>
+          <button data-testid="reset-current" onClick={resetCurrent} className="btn" title={lang==='zh'?'仅清空当前输入与结果，保留历史记录':'Clear current inputs and result only, keep history'}>{lang==='zh'? '清空当前' : 'Clear current'}</button>
         </div>
         <p className="text-xs text-gray-500">
           {lang==='zh' ? (SPREAD_DESC[spreadId]?.zh || '') : (SPREAD_DESC[spreadId]?.en || '')}
         </p>
         <p className="text-xs text-gray-500">{lang === "zh" ? "提示：设置种子可让结果可复现；此工具用于自我反思，不替代医疗/法律/投资建议。" : "Tip: Set a seed for reproducible draws. For reflection only; not medical/legal/financial advice."}</p>
         <p className="text-xs text-gray-500">{lang==='zh' ? '逆位：牌倒置，表示能量受阻或内化；不确定可先不勾选。复盘：到期回看完成度与成效，用数据改进方法。' : 'Reversed: upside‑down means blocked/internalized energy; if unsure, leave it off. Review: reflect on completion and effect to improve.'}</p>
+        <p className="text-xs text-gray-500">{lang==='zh' ? '换行：导出的 .txt 的换行符。Windows 记事本请选择 CRLF；macOS/Linux 通常用 LF。' : 'Newline: the line ending used in exported .txt. Choose CRLF for Windows Notepad; LF for macOS/Linux.'}</p>
       </Section>
 
       {reading && (
