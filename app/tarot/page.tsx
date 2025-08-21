@@ -215,16 +215,22 @@ function HelpModal({ open, onClose, lang }: { open: boolean; onClose: ()=>void; 
             <div>{lang==='zh'?'同一 Seed + 设置会得到相同牌面（方便复现与分享）':'Same seed + settings reproduce identical draw (for sharing/traceability)'}</div>
           </div>
           <div>
-            <div className="font-medium">{lang==='zh'?'逆位':'Reversed'}</div>
-            <div>{lang==='zh'?'勾选后可能出现逆位（牌倒置），影响解读语境':'When enabled, cards may be reversed, changing interpretation context'}</div>
+            <div className="font-medium">{lang==='zh'?'逆位（牌倒置）':'Reversed (upside‑down)'}</div>
+            <div>{lang==='zh'
+              ? '代表该牌面的能量被阻滞或需要内在化处理；不是“好/坏”，而是提醒你从相反面或内在面看问题。'
+              : 'Signals blocked or internalized energy; not “good/bad” but a cue to consider the inverse or inner aspect.'}</div>
           </div>
           <div>
             <div className="font-medium">{lang==='zh'?'行动建议':'Action Plan'}</div>
-            <div>{lang==='zh'?'基于牌面稳定映射生成 1-3 条具体、可验证的下一步':'Generated deterministically from spread/cards into 1-3 concrete, verifiable steps'}</div>
+            <div>{lang==='zh'?'基于牌面稳定映射生成 1-3 条具体、可验证的下一步（今天能做的一小步）。':'Generated deterministically into 1–3 concrete, verifiable steps you can do today.'}</div>
           </div>
           <div>
             <div className="font-medium">.ics</div>
-            <div>{lang==='zh'?'下载日历事件，按澳洲悉尼时区转为 UTC，默认 30 分钟':'Download calendar event; Australia/Sydney time converted to UTC; 30-min duration'}</div>
+            <div>{lang==='zh'?'下载日历事件，按澳洲悉尼时区转为 UTC，默认 30 分钟。建议在复盘当天回看行动是否完成与成效。':'Download calendar event (converted from Australia/Sydney to UTC; 30‑min). Use it to review completion and effect.'}</div>
+          </div>
+          <div>
+            <div className="font-medium">{lang==='zh'?'复盘（Review）':'Review'}</div>
+            <div>{lang==='zh'?'在设定日期回看：完成度（0–100%）与成效（0–100%）。周报会汇总，帮你迭代方法。':'On the date, reflect: completion (0–100%) and effect (0–100%). Weekly report aggregates for iteration.'}</div>
           </div>
         </div>
       </div>
@@ -419,6 +425,28 @@ export default function TarotApp() {
   const [currentQuestion, setCurrentQuestion] = useLocalStorage<string>("tarot.question", "未来两周推进我的 X 的最佳做法？");
   const [newlinePref, setNewlinePref] = useLocalStorage<string>("tarot.newline", "lf");
   const [showHelp, setShowHelp] = useState(false);
+  // 首次访问自动展示一次帮助
+  useEffect(()=>{
+    try {
+      const key = 'tarot.helpShown';
+      const shown = localStorage.getItem(key);
+      if (!shown) {
+        setShowHelp(true);
+        localStorage.setItem(key, '1');
+      }
+    } catch {}
+  },[]);
+
+  function exampleReading() {
+    const demoSeed = 'demo-2025-08-21';
+    const demoQ = lang==='zh' ? '示例：两周内提升专注力的最佳做法？' : 'Example: Best way to improve focus in two weeks?';
+    setSeed(demoSeed);
+    setCurrentQuestion(demoQ);
+    setSpreadId('three');
+    setAllowReverse(true);
+    // 等状态更新后执行抽牌
+    setTimeout(()=>{ draw(); }, 0);
+  }
 
   // On first load, parse URL search params to restore and auto draw
   useEffect(() => {
@@ -697,8 +725,10 @@ export default function TarotApp() {
             </select>
           </label>
           <button data-testid="draw" onClick={draw} className="btn btn-primary">{lang === "zh" ? "抽牌" : "Draw"}</button>
+          <button onClick={exampleReading} className="btn">{lang==='zh'? '示例阅读' : 'Example Reading'}</button>
         </div>
         <p className="text-xs text-gray-500">{lang === "zh" ? "提示：设置种子可让结果可复现；此工具用于自我反思，不替代医疗/法律/投资建议。" : "Tip: Set a seed for reproducible draws. For reflection only; not medical/legal/financial advice."}</p>
+        <p className="text-xs text-gray-500">{lang==='zh' ? '逆位：牌倒置，表示能量受阻或内化；复盘：到期回看完成度与成效，用数据改进方法。' : 'Reversed: upside‑down card signals blocked/internalized energy; Review: reflect on completion and effect to improve.'}</p>
       </Section>
 
       {reading && (
