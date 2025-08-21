@@ -313,7 +313,14 @@ const MAJOR_HINT_EN: Record<string, string> = {
   "20": "Write a review: keep what's working, cut what's not",
 };
 
-const RULES_HASH = stableHashHex(JSON.stringify({ ACTION_VERBS_ZH, ACTION_VERBS_EN, MAJOR_HINT_ZH, MAJOR_HINT_EN, algo: ALGO_VERSION }));
+const SPREADS_SNAPSHOT = Object.fromEntries(
+  Object.values(SPREADS).map((s: any) => [s.id, { name: s.name, positions: s.positions }])
+);
+const RULES_HASH = stableHashHex(JSON.stringify({
+  ACTION_VERBS_ZH, ACTION_VERBS_EN, MAJOR_HINT_ZH, MAJOR_HINT_EN,
+  spreads: SPREADS_SNAPSHOT,
+  algo: ALGO_VERSION
+}));
 
 function generateActionPlan(reading: any, lang: Lang) {
   // 纯函数：对同一 seed+牌面+位置，输出固定。避免依赖可变的 PRNG 调用序。
@@ -361,7 +368,8 @@ export default function TarotApp() {
   const [currentQuestion, setCurrentQuestion] = useLocalStorage<string>("tarot.question", "未来两周推进我的 X 的最佳做法？");
   const [newlinePref, setNewlinePref] = useLocalStorage<string>("tarot.newline", "lf");
 
-  const spread = (SPREADS as any)[spreadId];
+  // Fallback to default 'three' spread if id is invalid
+  const spread = (SPREADS as any)[spreadId] || (SPREADS as any).three;
 
   function draw() {
     const s = seed.trim() || String(Date.now());
@@ -393,9 +401,18 @@ export default function TarotApp() {
     if (!r) return;
     const nl = newlinePref === 'crlf' ? "\r\n" : "\n";
     const txt = buildReadingText(r, { lang, notes, newline: nl });
-    navigator.clipboard.writeText(txt)
-      .then(() => alert(lang === "zh" ? "已复制到剪贴板" : "Copied to clipboard"))
-      .catch(() => downloadText(r));
+    try {
+      const cb: any = (navigator as any).clipboard;
+      if (cb && typeof cb.writeText === 'function') {
+        cb.writeText(txt)
+          .then(() => alert(lang === "zh" ? "已复制到剪贴板" : "Copied to clipboard"))
+          .catch(() => downloadText(r));
+      } else {
+        downloadText(r);
+      }
+    } catch {
+      downloadText(r);
+    }
   }
 
   function downloadText(r = reading) {
@@ -483,7 +500,7 @@ export default function TarotApp() {
               const list = prev.slice();
               const idx = list.findIndex((x)=>x.ts === reading.ts && x.seed === reading.seed);
               if (idx >= 0) list[idx] = updated; else list.unshift(updated);
-              return list;
+              return list.slice(0, 50);
             });
           }} />
         </Section>
