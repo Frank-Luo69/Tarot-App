@@ -257,7 +257,8 @@ function WeeklyReport({ history, lang }: { history: any[]; lang: Lang }) {
     return `${year}-W${String(week).padStart(2,'0')}`;
   };
   const byWeek: Record<string, any[]> = {};
-  reviewed.forEach(r=>{ const k = groupKey(r.ts); (byWeek[k] = byWeek[k]||[]).push(r); });
+  const whenOf = (r:any) => r.review?.at || r.reviewAt || r.ts;
+  reviewed.forEach(r=>{ const k = groupKey(whenOf(r)); (byWeek[k] = byWeek[k]||[]).push(r); });
   const weeks = Object.keys(byWeek).sort();
   return (
     <div className="text-sm space-y-2">
@@ -313,8 +314,12 @@ const MAJOR_HINT_EN: Record<string, string> = {
   "20": "Write a review: keep what's working, cut what's not",
 };
 
+// Sorted snapshot to keep RULES_HASH stable regardless of object key order
 const SPREADS_SNAPSHOT = Object.fromEntries(
-  Object.values(SPREADS).map((s: any) => [s.id, { name: s.name, positions: s.positions }])
+  Object.values(SPREADS)
+    .slice()
+    .sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)))
+    .map((s: any) => [s.id, { name: s.name, positions: s.positions }])
 );
 const RULES_HASH = stableHashHex(JSON.stringify({
   ACTION_VERBS_ZH, ACTION_VERBS_EN, MAJOR_HINT_ZH, MAJOR_HINT_EN,
@@ -336,7 +341,10 @@ function generateActionPlan(reading: any, lang: Lang) {
       actions.push(`${name}: ${hint}`);
     } else {
       const suit = c.suit as keyof typeof verbs;
-      const pool = verbs[suit];
+      // Fallback: if suit is unknown, use the first available pool to avoid errors on imported/legacy data
+      const pools = Object.values(verbs);
+      const pool = (verbs[suit] || (pools[0] as any) || []) as string[];
+      if (!Array.isArray(pool) || pool.length === 0) return;
       // 稳定索引：seed + card key/suit/pip + position index (+ reversed) → hash → index
   const posZh = c.pos?.cn ?? '';
   const posEn = c.pos?.en ?? '';
@@ -519,7 +527,7 @@ export default function TarotApp() {
               </ul>
             </div>
           )}
-          <div className="text-xs text-gray-600 mt-1">{(lang === "zh" ? "复盘时间：" : "Review at: ") + formatDateLocal(reading.reviewAt || addDays(new Date(reading.ts), reviewDays))}</div>
+          <div className="text-xs text-gray-600 mt-1">{(lang === "zh" ? "复盘时间：" : "Review at: ") + formatDateLocal(reading.reviewAt || addDays(new Date(reading.ts), 14))}</div>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={lang === "zh" ? "写下你的行动与验证点…" : "Write actions & checkpoints…"} className="w-full border rounded-lg p-2 mt-3" />
           <div className="flex gap-2">
             <button onClick={() => exportText()} className="px-3 py-1.5 rounded-lg border">{lang === "zh" ? "复制结果" : "Copy result"}</button>
@@ -622,7 +630,7 @@ function buildReadingText(r: any, opts: { lang: Lang; notes?: string; newline?: 
     lines.push(opts.lang === "zh" ? "行动建议:" : "Action Plan:");
     r.plan.forEach((a: string, i: number) => lines.push(`${i + 1}. ${a}`));
   }
-  if (opts.notes) {
+  if (opts.notes !== undefined) {
     lines.push("---");
     lines.push(opts.lang === "zh" ? `笔记：${opts.notes}` : `Notes: ${opts.notes}`);
   }
