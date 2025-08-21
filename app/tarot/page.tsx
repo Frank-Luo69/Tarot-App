@@ -188,6 +188,49 @@ function Section({ title, children }: { title: React.ReactNode; children: React.
 function Pill({ children }: { children: React.ReactNode }) {
   return <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-xs mr-1">{children}</span>;
 }
+function HelpModal({ open, onClose, lang }: { open: boolean; onClose: ()=>void; lang: Lang }) {
+  if (!open) return null;
+  return (
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative card w-full max-w-2xl p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-lg font-semibold">{lang==='zh'?'如何使用':'How to use'}</div>
+          <button className="btn btn-xs" onClick={onClose}>{lang==='zh'?'关闭':'Close'}</button>
+        </div>
+        <div className="text-sm text-gray-700 space-y-3">
+          <div>
+            <div className="font-medium">{lang==='zh'?'核心流程':'Core flow'}</div>
+            <ol className="list-decimal pl-5 space-y-1">
+              <li>{lang==='zh'?'写下要推进的问题/主题':'Write your question/topic'}</li>
+              <li>{lang==='zh'?'选择牌阵、是否允许逆位；可选填种子（可复现）':'Pick spread, allow reversed or not; optional seed (reproducible)'}</li>
+              <li>{lang==='zh'?'设置复盘天数并抽牌':'Set review days and draw'}</li>
+              <li>{lang==='zh'?'查看“行动建议”，今天完成最小一步':'Review Action Plan and execute smallest step today'}</li>
+              <li>{lang==='zh'?'导出 .txt/.json，或下载 .ics 加入日历提醒':'Export .txt/.json or download .ics to add calendar reminder'}</li>
+              <li>{lang==='zh'?'复盘时打分，周报自动汇总':'Score your review; weekly report aggregates automatically'}</li>
+            </ol>
+          </div>
+          <div>
+            <div className="font-medium">Seed</div>
+            <div>{lang==='zh'?'同一 Seed + 设置会得到相同牌面（方便复现与分享）':'Same seed + settings reproduce identical draw (for sharing/traceability)'}</div>
+          </div>
+          <div>
+            <div className="font-medium">{lang==='zh'?'逆位':'Reversed'}</div>
+            <div>{lang==='zh'?'勾选后可能出现逆位（牌倒置），影响解读语境':'When enabled, cards may be reversed, changing interpretation context'}</div>
+          </div>
+          <div>
+            <div className="font-medium">{lang==='zh'?'行动建议':'Action Plan'}</div>
+            <div>{lang==='zh'?'基于牌面稳定映射生成 1-3 条具体、可验证的下一步':'Generated deterministically from spread/cards into 1-3 concrete, verifiable steps'}</div>
+          </div>
+          <div>
+            <div className="font-medium">.ics</div>
+            <div>{lang==='zh'?'下载日历事件，按澳洲悉尼时区转为 UTC，默认 30 分钟':'Download calendar event; Australia/Sydney time converted to UTC; 30-min duration'}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 function CardFace({ name, reversed, lang }: { name: string; reversed: boolean; lang: Lang }) {
   return (
     <div className={`relative w-36 h-56 border rounded-2xl shadow-sm bg-white flex items-center justify-center p-2 ${reversed ? "rotate-180" : ""}`}>
@@ -375,6 +418,7 @@ export default function TarotApp() {
   const [reading, setReading] = useState<any | null>(null);
   const [currentQuestion, setCurrentQuestion] = useLocalStorage<string>("tarot.question", "未来两周推进我的 X 的最佳做法？");
   const [newlinePref, setNewlinePref] = useLocalStorage<string>("tarot.newline", "lf");
+  const [showHelp, setShowHelp] = useState(false);
 
   // On first load, parse URL search params to restore and auto draw
   useEffect(() => {
@@ -622,31 +666,32 @@ export default function TarotApp() {
 
   return (
   <div className="container-prose">
-      <header className="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <header className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold">Tarot · {lang === "zh" ? "结构化自我反思（MVP）" : "Structured Reflection (MVP)"}</h1>
         <div className="flex items-center gap-2">
           <button className={`btn ${lang === "zh" ? "btn-primary" : "btn-ghost"}`} onClick={() => setLang("zh")}>中</button>
           <button className={`btn ${lang === "en" ? "btn-primary" : "btn-ghost"}`} onClick={() => setLang("en")}>EN</button>
+      <button className="btn" onClick={()=>setShowHelp(true)}>{lang==='zh'? '帮助' : 'Help'}</button>
         </div>
       </header>
 
       <Section title={lang === "zh" ? "问题设置" : "Question"}>
-  <input data-testid="question-input" value={currentQuestion} onChange={(e) => setCurrentQuestion(e.target.value)} className="w-full input" placeholder={lang === "zh" ? "例如：两周内推进 X 的最佳做法？" : "e.g., Best way to advance X in two weeks?"} />
+  <input data-testid="question-input" value={currentQuestion} onChange={(e) => setCurrentQuestion(e.target.value)} className="w-full input" placeholder={lang === "zh" ? "例如：两周内推进 X 的最佳做法？" : "e.g., Best way to advance X in two weeks?"} title={lang==='zh'? '写下你要推进的问题/主题' : 'Write your question/topic'} />
         <div className="flex flex-wrap items-center gap-3">
-          <select data-testid="spread-select" value={spreadId} onChange={(e) => setSpreadId(e.target.value)} className="select">
+          <select data-testid="spread-select" value={spreadId} onChange={(e) => setSpreadId(e.target.value)} className="select" title={lang==='zh'?'不同牌阵代表不同位置含义':'Different spreads define card positions'}>
             {Object.values(SPREADS).map((s: any) => (
               <option key={s.id} value={s.id}>{s.name[langKey(lang)]}</option>
             ))}
           </select>
-          <label className="flex items-center gap-2 text-sm"><input className="checkbox" data-testid="allow-reverse" type="checkbox" checked={allowReverse} onChange={(e) => setAllowReverse(e.target.checked)} />{lang === "zh" ? "允许逆位" : "Allow reversed"}</label>
-          <input data-testid="seed-input" value={seed} onChange={(e) => setSeed(e.target.value)} className="input" placeholder={lang === "zh" ? "可选：种子（可复现）" : "Optional: seed (reproducible)"} />
+          <label className="flex items-center gap-2 text-sm"><input className="checkbox" data-testid="allow-reverse" type="checkbox" checked={allowReverse} onChange={(e) => setAllowReverse(e.target.checked)} title={lang==='zh'?'可能出现倒置牌面，改变语境':'Allow upside-down cards affecting context'} />{lang === "zh" ? "允许逆位" : "Allow reversed"}</label>
+          <input data-testid="seed-input" value={seed} onChange={(e) => setSeed(e.target.value)} className="input" placeholder={lang === "zh" ? "可选：种子（可复现）" : "Optional: seed (reproducible)"} title={lang==='zh'?'同一种子+设置会得到相同结果':'Same seed+settings reproduce identical result'} />
           <label className="flex items-center gap-2 text-sm">
             {lang === "zh" ? "复盘天数" : "Review in days"}
-            <input type="number" min={1} max={60} value={reviewDays} onChange={(e) => setReviewDays(Number(e.target.value)||14)} className="w-20 input" />
+            <input type="number" min={1} max={60} value={reviewDays} onChange={(e) => setReviewDays(Number(e.target.value)||14)} className="w-20 input" title={lang==='zh'?'几天后提醒你复盘本次行动':'Days until calendar/review reminder'} />
           </label>
           <label className="flex items-center gap-2 text-sm">
             {lang === 'zh' ? '换行' : 'Newline'}
-            <select data-testid="newline-select" className="select" value={newlinePref} onChange={(e)=>setNewlinePref(e.target.value)}>
+            <select data-testid="newline-select" className="select" value={newlinePref} onChange={(e)=>setNewlinePref(e.target.value)} title={lang==='zh'?'Windows 记事本建议选 CRLF':'Use CRLF for Windows Notepad'}>
               <option value="lf">LF (\n)</option>
               <option value="crlf">CRLF (\r\n)</option>
             </select>
@@ -755,6 +800,8 @@ export default function TarotApp() {
           ? "免责声明：本应用用于象征性反思与自我问答，不提供任何医疗、法律、投资建议；并提供可复盘的行动输出，以提高决策质量。"
           : "Disclaimer: Symbolic reflection only; not medical/legal/financial advice; produces reviewable actions to improve decision quality."}
       </footer>
+
+  <HelpModal open={showHelp} onClose={()=>setShowHelp(false)} lang={lang} />
     </div>
   );
 }
