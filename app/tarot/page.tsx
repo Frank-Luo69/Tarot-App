@@ -428,6 +428,40 @@ export default function TarotApp() {
   setTimeout(() => URL.revokeObjectURL(a.href), 0);
   }
 
+  // Build all-history text as a pure join of individual exports
+  function buildHistoryBundle(list: any[], opts: { lang: Lang; newline?: "\n" | "\r\n" }) {
+    const nl = opts.newline ?? "\n";
+    const sep = `${nl}${nl}====${nl}${nl}`;
+    return list.map((r)=> buildReadingText(r, { lang: opts.lang, newline: nl })).join(sep);
+  }
+
+  function downloadAllTxt() {
+    const nl = newlinePref === 'crlf' ? "\r\n" : "\n";
+    const content = history.length ? buildHistoryBundle(history, { lang, newline: nl }) : (lang==='zh'?'暂无记录':'No records');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const base = `tarot_history_${new Date().toISOString().replace(/[:.]/g,'-')}`;
+    a.download = `${base}.txt`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  }
+
+  function downloadAllJson() {
+    const blob = new Blob([JSON.stringify(history, null, 2)], { type: 'application/json;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const base = `tarot_history_${new Date().toISOString().replace(/[:.]/g,'-')}`;
+    a.download = `${base}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  }
+
+  function resetHistory() {
+    const ok = confirm(lang==='zh'?'确定要清空本地历史吗？此操作不可撤销。':'Clear local history? This cannot be undone.');
+    if (ok) { setHistory([]); setReading(null); }
+  }
+
   return (
     <div className="max-w-5xl mx-auto p-6 text-gray-800">
       <header className="flex flex-wrap items-center justify-between gap-3 mb-6">
@@ -511,11 +545,16 @@ export default function TarotApp() {
           <div className="text-sm text-gray-500">{lang === "zh" ? "暂无记录。抽一组牌开始。" : "No records yet. Draw to start."}</div>
         ) : (
           <div className="space-y-3">
+            <div className="flex flex-wrap gap-2 mb-1">
+              <button className="px-2 py-1 text-xs rounded border" onClick={downloadAllTxt}>{lang==='zh'? '导出全部 .txt':'Export all .txt'}</button>
+              <button className="px-2 py-1 text-xs rounded border" onClick={downloadAllJson}>{lang==='zh'? '导出全部 .json':'Export all .json'}</button>
+              <button className="px-2 py-1 text-xs rounded border" onClick={resetHistory}>{lang==='zh'? '清空历史':'Reset history'}</button>
+            </div>
             {history.map((h, i) => (
               <div key={i} className="border rounded-xl p-3 flex flex-col gap-1">
                 <div className="text-sm flex flex-wrap items-center gap-2">
                   <span className="font-medium">{formatDateLocal(h.ts)}</span>
-                  <Pill>{(SPREADS as any)[h.spreadId].name[langKey(lang)]}</Pill>
+                  <Pill>{(((SPREADS as any)[h.spreadId] || (SPREADS as any).three).name[langKey(lang)])}</Pill>
                   <Pill>seed={h.seed}</Pill>
                   <Pill>deck={h.meta?.deckVersion || DECK_VERSION}</Pill>
                   <Pill>rules={h.meta?.rulesHash || RULES_HASH}</Pill>
@@ -523,6 +562,7 @@ export default function TarotApp() {
                 <div className="text-xs text-gray-600 line-clamp-2">
                   {h.cards.map((c: any, idx: number) => `${idx + 1}.${c.pos[langKey(lang)]}-${c.name}${c.reversed ? (lang === "zh" ? "(逆)" : "(rev)") : ""}`).join("  ")}
                 </div>
+                <div className="text-[11px] text-gray-600">{(lang === 'zh' ? '复盘时间：' : 'Review at: ') + formatDateLocal(h.reviewAt || addDays(new Date(h.ts), 14))}</div>
                 {h.plan?.length > 0 && (
                   <div className="text-xs text-gray-700">{(lang === "zh" ? "行动：" : "Plan: ") + h.plan.join(" · ")}</div>
                 )}
