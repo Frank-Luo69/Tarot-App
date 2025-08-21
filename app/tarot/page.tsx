@@ -23,33 +23,45 @@ function addDays(date: Date, days: number) {
   d.setDate(d.getDate() + days);
   return d;
 }
+// ---- Global timezone for formatting & calendar logic ----
+const TIMEZONE = "Australia/Sydney" as const;
 
-// Timezone formatting
-const TIMEZONE = 'Australia/Sydney';
-function formatDateLocal(d: string | number | Date) {
-  return new Date(d).toLocaleString(undefined, { timeZone: TIMEZONE });
+// Format date string in a stable "YYYY-MM-DD HH:mm" using the above timezone
+function formatDateLocal(dateLike: string | number | Date) {
+  const d = new Date(dateLike);
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || "00";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
 }
 
-// ========================= Data: Tarot Deck =========================
-// Major Arcana (22) — concise keywords (bilingual) focused on ACTION prompts
+// Major Arcana (22)
 const MAJORS = [
-  { key: "0", en: "The Fool", cn: "愚者", kwEn: ["begin", "risk", "curiosity"], kwCn: ["开端", "试错", "好奇"] },
-  { key: "1", en: "The Magician", cn: "魔术师", kwEn: ["focus", "resource", "ship"], kwCn: ["聚焦", "调用资源", "立即落地"] },
-  { key: "2", en: "The High Priestess", cn: "女祭司", kwEn: ["research", "silence", "observe"], kwCn: ["调研", "沉静", "观察"] },
-  { key: "3", en: "The Empress", cn: "皇后", kwEn: ["nurture", "create", "support"], kwCn: ["滋养", "创造", "支持"] },
-  { key: "4", en: "The Emperor", cn: "皇帝", kwEn: ["structure", "rule", "boundaries"], kwCn: ["结构化", "规则", "边界"] },
-  { key: "5", en: "The Hierophant", cn: "教皇", kwEn: ["standards", "mentor", "procedure"], kwCn: ["标准", "导师", "流程"] },
-  { key: "6", en: "The Lovers", cn: "恋人", kwEn: ["choose", "align values", "commit"], kwCn: ["选择", "统一价值", "承诺"] },
-  { key: "7", en: "The Chariot", cn: "战车", kwEn: ["drive", "control", "deadline"], kwCn: ["推进", "掌控", "定时限"] },
-  { key: "8", en: "Strength", cn: "力量", kwEn: ["courage", "tame", "persist"], kwCn: ["勇气", "驯服", "坚持"] },
-  { key: "9", en: "The Hermit", cn: "隐者", kwEn: ["reflect", "distill", "insight"], kwCn: ["反思", "提炼", "洞见"] },
-  { key: "10", en: "Wheel of Fortune", cn: "命运之轮", kwEn: ["reframe", "leverage luck", "pivot"], kwCn: ["换框", "借势", "转向"] },
-  { key: "11", en: "Justice", cn: "正义", kwEn: ["measure", "trade-off", "decide"], kwCn: ["度量", "权衡", "决断"] },
-  { key: "12", en: "The Hanged Man", cn: "倒吊人", kwEn: ["pause", "sacrifice", "learn"], kwCn: ["暂停", "取舍", "学习"] },
-  { key: "13", en: "Death", cn: "死亡", kwEn: ["end", "clean up", "restart"], kwCn: ["终结", "清理", "重启"] },
-  { key: "14", en: "Temperance", cn: "节制", kwEn: ["mix", "balance", "iterate"], kwCn: ["调和", "平衡", "小步迭代"] },
-  { key: "15", en: "The Devil", cn: "恶魔", kwEn: ["cut addiction", "boundary", "cost"], kwCn: ["戒断", "设限", "成本"] },
-  { key: "16", en: "The Tower", cn: "高塔", kwEn: ["risk reveal", "fail fast", "fallback"], kwCn: ["暴露风险", "快速失败", "预案"] },
+  { key: "0", en: "The Fool", cn: "愚者", kwEn: ["begin", "curious", "leap"], kwCn: ["开始", "好奇", "跃迁"] },
+  { key: "1", en: "The Magician", cn: "魔术师", kwEn: ["focus", "mvp", "execute"], kwCn: ["聚焦", "最小可行", "执行"] },
+  { key: "2", en: "The High Priestess", cn: "女祭司", kwEn: ["research", "listen", "intuition"], kwCn: ["调研", "倾听", "直觉"] },
+  { key: "3", en: "The Empress", cn: "皇后", kwEn: ["nurture", "growth", "support"], kwCn: ["滋养", "增长", "支持"] },
+  { key: "4", en: "The Emperor", cn: "皇帝", kwEn: ["structure", "rules", "lead"], kwCn: ["结构", "规则", "领导"] },
+  { key: "5", en: "The Hierophant", cn: "教皇", kwEn: ["principle", "mentor", "standard"], kwCn: ["原则", "导师", "标准"] },
+  { key: "6", en: "The Lovers", cn: "恋人", kwEn: ["align", "commit", "choice"], kwCn: ["对齐", "承诺", "抉择"] },
+  { key: "7", en: "The Chariot", cn: "战车", kwEn: ["drive", "deadline", "focus"], kwCn: ["推进", "截止", "聚焦"] },
+  { key: "8", en: "Strength", cn: "力量", kwEn: ["discipline", "patience", "consistency"], kwCn: ["自律", "耐心", "一致性"] },
+  { key: "9", en: "The Hermit", cn: "隐者", kwEn: ["reflect", "single-task", "isolate"], kwCn: ["反思", "单任务", "隔离干扰"] },
+  { key: "10", en: "Wheel of Fortune", cn: "命运之轮", kwEn: ["cycle", "timing", "adapt"], kwCn: ["周期", "时机", "适应"] },
+  { key: "11", en: "Justice", cn: "正义", kwEn: ["metric", "fair", "decision"], kwCn: ["指标", "公正", "决策"] },
+  { key: "12", en: "The Hanged Man", cn: "倒吊人", kwEn: ["reframe", "pause", "trade-off"], kwCn: ["换位", "暂停", "取舍"] },
+  { key: "13", en: "Death", cn: "死神", kwEn: ["end", "reset", "simplify"], kwCn: ["结束", "重置", "简化"] },
+  { key: "14", en: "Temperance", cn: "节制", kwEn: ["balance", "iterate", "pace"], kwCn: ["平衡", "迭代", "节奏"] },
+  { key: "15", en: "The Devil", cn: "恶魔", kwEn: ["constraint", "habit", "audit"], kwCn: ["约束", "习惯", "稽核"] },
+  { key: "16", en: "The Tower", cn: "高塔", kwEn: ["risk", "fallback", "fix"], kwCn: ["风险", "预案", "修复"] },
   { key: "17", en: "The Star", cn: "星星", kwEn: ["long-term", "healing", "north star"], kwCn: ["长期", "修复", "北极星目标"] },
   { key: "18", en: "The Moon", cn: "月亮", kwEn: ["uncertainty", "test small", "avoid illusions"], kwCn: ["不确定", "小实验", "避幻觉"] },
   { key: "19", en: "The Sun", cn: "太阳", kwEn: ["clarify", "ship", "celebrate"], kwCn: ["澄清", "上线", "庆祝"] },
@@ -203,17 +215,23 @@ function Section({ title, children }: { title: React.ReactNode; children: React.
 function Pill({ children }: { children: React.ReactNode }) {
   return <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-xs mr-1">{children}</span>;
 }
-function HelpModal({ open, onClose, lang }: { open: boolean; onClose: ()=>void; lang: Lang }) {
+function HelpModal({ open, onClose, lang, target }: { open: boolean; onClose: ()=>void; lang: Lang; target?: string }) {
+  const reversedRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (open && target === 'reversed' && reversedRef.current) {
+      setTimeout(() => reversedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    }
+  }, [open, target]);
   if (!open) return null;
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative card w-full max-w-2xl p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative card w-full max-w-2xl p-4 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-2">
           <div className="text-lg font-semibold">{lang==='zh'?'如何使用':'How to use'}</div>
           <button className="btn btn-xs" onClick={onClose}>{lang==='zh'?'关闭':'Close'}</button>
         </div>
-        <div className="text-sm text-gray-700 space-y-3">
+        <div className="text-sm text-gray-700 space-y-3 leading-6">
           <div>
             <div className="font-medium">{lang==='zh'?'核心流程':'Core flow'}</div>
             <ol className="list-decimal pl-5 space-y-1">
@@ -229,11 +247,33 @@ function HelpModal({ open, onClose, lang }: { open: boolean; onClose: ()=>void; 
             <div className="font-medium">Seed</div>
             <div>{lang==='zh'?'同一 Seed + 设置会得到相同牌面（方便复现与分享）':'Same seed + settings reproduce identical draw (for sharing/traceability)'}</div>
           </div>
-          <div>
-            <div className="font-medium">{lang==='zh'?'逆位（牌倒置）':'Reversed (upside‑down)'}</div>
+          <div ref={reversedRef} id="section-reversed" className="scroll-mt-6">
+            <div className="font-medium">{lang==='zh'?'逆位（牌倒置）详解':'Reversed (upside‑down), explained'}</div>
             <div>{lang==='zh'
-              ? '代表该牌面的能量被阻滞或需要内在化处理；不是“好/坏”，而是提醒你从相反面或内在面看问题。'
-              : 'Signals blocked or internalized energy; not “good/bad” but a cue to consider the inverse or inner aspect.'}</div>
+              ? '不是好/坏，而是语境改变：能量被阻滞、过度或需要向内处理。'
+              : 'Not good/bad; it changes context: energy blocked, excessive, or needs internal processing.'}</div>
+            <ul className="list-disc pl-5 mt-1 space-y-1">
+              <li>{lang==='zh' ? '何时开启：遇到卡点、想做风险控制/设界/节奏调整、做复盘查根因。' : 'Enable when blocked, doing risk control/boundaries/pace, or root-cause review.'}</li>
+              <li>{lang==='zh' ? '何时关闭：新手初用、需要快速落地、避免信息噪声。' : 'Disable for first-time use, need fast execution, or avoid noise.'}</li>
+              <li>{lang==='zh' ? '对比技巧：用同一种子先关后开，对照两份方案做压力测试。' : 'Tip: with same seed, compare off vs on to stress-test the plan.'}</li>
+            </ul>
+            <div className="mt-2">
+              <div className="font-medium">{lang==='zh'?'两个简例':'Two quick examples'}</div>
+              <div className="mt-1">
+                <div className="font-medium">The Sun</div>
+                <div className="text-xs">
+                  {lang==='zh' ? '正位：公开里程碑、小规模发布、用反馈确认扩大。逆位：收敛范围、补稳定性、小样本验证再曝光。'
+                  : 'Upright: announce milestone, small release, scale with feedback. Reversed: narrow scope, strengthen stability, validate small before exposure.'}
+                </div>
+              </div>
+              <div className="mt-1">
+                <div className="font-medium">The Chariot</div>
+                <div className="text-xs">
+                  {lang==='zh' ? '正位：单点目标+时间盒，清理两项最高阻碍，每日推进。逆位：先统一方向与指标，减少并行到1个，明确角色边界再启动。'
+                  : 'Upright: one goal + timebox, clear top obstacles, daily push. Reversed: align direction/metrics, reduce WIP to 1, define roles/boundaries first.'}
+                </div>
+              </div>
+            </div>
           </div>
           <div>
             <div className="font-medium">{lang==='zh'?'行动建议':'Action Plan'}</div>
@@ -241,7 +281,7 @@ function HelpModal({ open, onClose, lang }: { open: boolean; onClose: ()=>void; 
           </div>
           <div>
             <div className="font-medium">.ics</div>
-            <div>{lang==='zh'?'下载日历事件，按澳洲悉尼时区转为 UTC，默认 30 分钟。建议在复盘当天回看行动是否完成与成效。':'Download calendar event (converted from Australia/Sydney to UTC; 30‑min). Use it to review completion and effect.'}</div>
+            <div>{lang==='zh'?`下载日历事件，按澳洲悉尼(${TIMEZONE})时区转为 UTC，默认 30 分钟。建议在复盘当天回看行动是否完成与成效。`:`Download a calendar event (converted from ${TIMEZONE} to UTC; 30‑min). Use it to review completion and effect.`}</div>
           </div>
           <div>
             <div className="font-medium">{lang==='zh'?'复盘（Review）':'Review'}</div>
@@ -255,8 +295,10 @@ function HelpModal({ open, onClose, lang }: { open: boolean; onClose: ()=>void; 
 function CardFace({ name, reversed, lang }: { name: string; reversed: boolean; lang: Lang }) {
   return (
     <div className={`relative w-36 h-56 border rounded-2xl shadow-sm bg-white flex items-center justify-center p-2 ${reversed ? "rotate-180" : ""}`}>
-      <div className="text-center text-sm font-medium leading-tight">{name}</div>
-  {reversed && <div className="absolute bottom-1 right-2 text-[10px] opacity-60">{lang==='zh'?'逆位':'reversed'}</div>}
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white to-gray-50" />
+      <div className="absolute inset-0 rounded-2xl" style={{boxShadow:'inset 0 2px 8px rgba(0,0,0,.05)'}} />
+      <div className="text-center text-sm font-medium leading-tight z-10 px-2">{name}</div>
+  {reversed && <div className="absolute bottom-1 right-2 text-[10px] opacity-60 z-10">{lang==='zh'?'逆位':'reversed'}</div>}
     </div>
   );
 }
@@ -440,6 +482,7 @@ export default function TarotApp() {
   const [currentQuestion, setCurrentQuestion] = useLocalStorage<string>("tarot.question", "未来两周推进我的 X 的最佳做法？");
   const [newlinePref, setNewlinePref] = useLocalStorage<string>("tarot.newline", "lf");
   const [showHelp, setShowHelp] = useState(false);
+  const [helpTarget, setHelpTarget] = useState<string | undefined>(undefined);
   // 首次访问自动展示一次帮助
   useEffect(()=>{
     try {
@@ -735,6 +778,7 @@ export default function TarotApp() {
             ))}
           </select>
           <label className="flex items-center gap-2 text-sm"><input className="checkbox" data-testid="allow-reverse" type="checkbox" checked={allowReverse} onChange={(e) => setAllowReverse(e.target.checked)} title={lang==='zh'?'可能出现倒置牌面，改变语境':'Allow upside-down cards affecting context'} />{lang === "zh" ? "允许逆位" : "Allow reversed"}</label>
+          <button className="btn btn-xs" onClick={()=>{ setHelpTarget('reversed'); setShowHelp(true); }} title={lang==='zh'?'了解逆位详解':'Learn about reversed'}>{lang==='zh'?'了解逆位':'Reversed info'}</button>
           <span className="text-xs text-gray-500" title={lang==='zh'? '初学者建议不勾选；当你想引入“阻滞/内化”的语境时再勾选。' : 'If you are new, leave it off; turn on when you want blocked/internalized context.'}>
             {lang==='zh' ? '建议：初学者先不勾；需要更细语境时再开' : 'Tip: newcomers leave off; enable for nuanced context'}
           </span>
@@ -764,7 +808,7 @@ export default function TarotApp() {
 
       {reading && (
         <Section title={lang === "zh" ? "本次抽牌" : "Current Reading"}>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" data-testid="reading-grid">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5" data-testid="reading-grid">
             {reading.cards.map((c: any, idx: number) => (
               <div key={idx} className="flex flex-col items-center gap-2">
                 <CardFace name={c.name} reversed={c.reversed} lang={lang} />
@@ -862,7 +906,7 @@ export default function TarotApp() {
           : "Disclaimer: Symbolic reflection only; not medical/legal/financial advice; produces reviewable actions to improve decision quality."}
       </footer>
 
-  <HelpModal open={showHelp} onClose={()=>setShowHelp(false)} lang={lang} />
+  <HelpModal open={showHelp} onClose={()=>{ setShowHelp(false); setHelpTarget(undefined); }} lang={lang} target={helpTarget} />
     </div>
   );
 }
