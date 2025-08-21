@@ -4,10 +4,10 @@
   "private": true,
   "description": "Structured Tarot reflection MVP (deterministic, reviewable, exportable)",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start",
+  "lint": "node -e \"try{require('fs').accessSync('.eslintrc.json')}catch(e){require('fs').writeFileSync('.eslintrc.json', JSON.stringify({root:true,extends:['next/core-web-vitals'],ignorePatterns:['.next/','node_modules/','public/','test-results/'],rules:{'@next/next/no-img-element':'off'}},null,2))}\" && next lint",
     "e2e": "playwright test",
     "e2e:install": "npx playwright install --with-deps"
   },
